@@ -40,6 +40,7 @@ def launch_gui(
     from src.gui.qml.models.template_list_model import TemplateListModel
     from src.gui.qml.models.template_updater_model import TemplateUpdaterModel
     from src.gui.qml.models.test_renders_model import TestRendersModel
+    from src.gui.qml.models.trim_model import TrimModel
     from src.render.render_queue import RenderQueue
 
     app = QGuiApplication(applicationDisplayName="MTG Proxy Studio")
@@ -91,6 +92,7 @@ def launch_gui(
     photocraft_setup_model = PhotocraftSetupModel(APP)
     studio_card_model = StudioCardModel()
     studio_render_preview_model = StudioRenderPreviewModel(render_queue)
+    trim_model = TrimModel()
     studio_render_model = StudioRenderModel(
         card_model=studio_card_model,
         template_list_model=template_list_model,
@@ -106,6 +108,7 @@ def launch_gui(
     root_context.setContextProperty("studioCardModel", studio_card_model)
     root_context.setContextProperty("studioRenderPreviewModel", studio_render_preview_model)
     root_context.setContextProperty("studioRenderModel", studio_render_model)
+    root_context.setContextProperty("trimModel", trim_model)
     root_context.setContextProperty("consoleModel", console_model)
     root_context.setContextProperty(
         "renderMessageDialogContentModel", render_message_dialog_content_model

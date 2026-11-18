@@ -766,6 +766,13 @@ ApplicationWindow {
                  background.implicitHeight: viewTabBar.implicitHeight
             }
 
+            CustomTabButton {
+                systemPalette: appSystemPalette
+                text: "Trim"
+                implicitHeight: viewTabBar.implicitHeight
+                background.implicitHeight: viewTabBar.implicitHeight
+            }
+
             RowLayout {
                 parent: viewTabBar
                 anchors.right: parent.right
@@ -858,10 +865,15 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     source: "views/StudioWorkspace.qml"
                 }
+                Loader {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    source: "views/TrimWorkspace.qml"
+                }
 
             }
             Console {
-                visible: viewTabBar.currentIndex !== 2
+                visible: viewTabBar.currentIndex < 2
                 
                 SplitView.preferredHeight: 200
                 SplitView.fillWidth: true
