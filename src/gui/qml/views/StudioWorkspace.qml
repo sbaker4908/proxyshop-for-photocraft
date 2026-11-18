@@ -2,9 +2,24 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 Item {
     id: workspace
+
+    property url artworkUrl: ""
+
+    FileDialog {
+        id: artworkPicker
+        title: "Choose Card Artwork"
+        fileMode: FileDialog.OpenFile
+        nameFilters: [
+            "Image files (*.png *.jpg *.jpeg *.webp)",
+            "All files (*)"
+        ]
+
+        onAccepted: workspace.artworkUrl = selectedFile
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -33,6 +48,34 @@ Item {
                 font.pixelSize: 18
                 font.bold: true
             }
+
+            Button {
+                 id: chooseArtworkButton
+                 text: "Choose Artwork..."
+                  anchors.top: parent.top
+                 anchors.topMargin: 70
+                 anchors.left: parent.left
+                 anchors.leftMargin: 20
+
+                 onClicked: artworkPicker.open()
+            }
+
+            
+Image {
+    anchors.top: chooseArtworkButton.bottom
+    anchors.topMargin: 16
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.leftMargin: 20
+    anchors.rightMargin: 20
+
+    height: 190
+
+    source: workspace.artworkUrl
+    fillMode: Image.PreserveAspectFit
+}
+
+
         }
 
         // Center panel: Card Preview
