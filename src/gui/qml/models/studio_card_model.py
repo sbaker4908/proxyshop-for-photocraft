@@ -62,6 +62,22 @@ class StudioCardModel(QObject):
                 if data is None:
                     raise ValueError("Card not found on Scryfall.")
 
+                # Scryfall stores artwork URLs directly on
+                # single-faced cards, but often stores them
+                # on individual faces for double-faced cards.
+                art_crop = ""
+
+                if data.image_uris is not None:
+                    art_crop = str(data.image_uris.art_crop)
+
+                elif data.card_faces:
+                    front_face = data.card_faces[0]
+
+                    if front_face.image_uris is not None:
+                        art_crop = str(
+                            front_face.image_uris.art_crop
+                        )
+
                 card: dict[str, str] = {
                     "name": data.name,
                     "mana_cost": data.mana_cost or "",
@@ -73,6 +89,7 @@ class StudioCardModel(QObject):
                     "artist": data.artist or "",
                     "set": data.set.upper(),
                     "rarity": str(data.rarity),
+                    "art_crop": art_crop,
                 }
 
                 result: LookupResult = {
