@@ -34,14 +34,14 @@ def launch_gui(
     from src.gui.qml.models.render_operations_model import RenderOperationsModel
     from src.gui.qml.models.settings_model import SettingsModel
     from src.gui.qml.models.settings_tree_model import SettingsTreeModel
+    from src.gui.qml.models.studio_card_model import StudioCardModel
+    from src.gui.qml.models.studio_render_preview_model import StudioRenderPreviewModel
     from src.gui.qml.models.template_list_model import TemplateListModel
     from src.gui.qml.models.template_updater_model import TemplateUpdaterModel
     from src.gui.qml.models.test_renders_model import TestRendersModel
     from src.render.render_queue import RenderQueue
-    from src.gui.qml.models.studio_card_model import StudioCardModel
-    
 
-    app = QGuiApplication(applicationDisplayName="Proxyshop")
+    app = QGuiApplication(applicationDisplayName="MTG Proxy Studio")
     app.setWindowIcon(QIcon("src/img/favicon.ico"))
     engine = QQmlApplicationEngine()
 
@@ -89,11 +89,13 @@ def launch_gui(
     image_transform_model = ImageTransformModel(file_dialog_model=file_dialog_model)
     photocraft_setup_model = PhotocraftSetupModel(APP)
     studio_card_model = StudioCardModel()
+    studio_render_preview_model = StudioRenderPreviewModel(render_queue)
 
     root_context = engine.rootContext()
     root_context.setContextProperty("filePathModel", file_path_model)
     root_context.setContextProperty("fileDialogModel", file_dialog_model)
     root_context.setContextProperty("studioCardModel", studio_card_model)
+    root_context.setContextProperty("studioRenderPreviewModel", studio_render_preview_model)
     root_context.setContextProperty("consoleModel", console_model)
     root_context.setContextProperty(
         "renderMessageDialogContentModel", render_message_dialog_content_model
