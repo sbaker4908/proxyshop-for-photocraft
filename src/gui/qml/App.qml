@@ -758,6 +758,12 @@ ApplicationWindow {
                 text: "Batch mode"
                 implicitHeight: viewTabBar.implicitHeight
                 background.implicitHeight: viewTabBar.implicitHeight
+            } 
+            CustomTabButton {
+                systemPalette: appSystemPalette
+                text: "Studio"
+              implicitHeight: viewTabBar.implicitHeight
+                 background.implicitHeight: viewTabBar.implicitHeight
             }
 
             RowLayout {
@@ -847,8 +853,16 @@ ApplicationWindow {
                     batchModel: batchRenderModel
                     pathModel: filePathModel
                 }
+                Loader {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    source: "views/StudioWorkspace.qml"
+                }
+
             }
             Console {
+                visible: viewTabBar.currentIndex !== 2
+                
                 SplitView.preferredHeight: 200
                 SplitView.fillWidth: true
 
