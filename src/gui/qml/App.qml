@@ -17,7 +17,7 @@ ApplicationWindow {
 
     property QtObject currentRenderingModel: viewTabBar.currentIndex === 1 ? batchRenderModel : templateListModel
 
-    title: "Proxyshop"
+    title: "MTG Proxy Studio"
     width: 800
     height: 640
     visible: true

@@ -1,7 +1,7 @@
 {
   "type": "module",
   "scripts": {
-    "build": "tsc && node --experimental-transform-types scripts_js/build.ts",
+    "build": "tsc && node scripts_js/build.ts",
     "type-check": "pyright ./plugins/** ./src/** ./tests/** ./scripts/** && tsc --noEmit && npx tsc --project tsconfig.tools.json --noEmit"
   },
   "devDependencies": {
