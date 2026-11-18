@@ -38,6 +38,8 @@ def launch_gui(
     from src.gui.qml.models.template_updater_model import TemplateUpdaterModel
     from src.gui.qml.models.test_renders_model import TestRendersModel
     from src.render.render_queue import RenderQueue
+    from src.gui.qml.models.studio_card_model import StudioCardModel
+    
 
     app = QGuiApplication(applicationDisplayName="Proxyshop")
     app.setWindowIcon(QIcon("src/img/favicon.ico"))
@@ -86,10 +88,12 @@ def launch_gui(
     settings_model = SettingsModel(settings_tree_model)
     image_transform_model = ImageTransformModel(file_dialog_model=file_dialog_model)
     photocraft_setup_model = PhotocraftSetupModel(APP)
+    studio_card_model = StudioCardModel()
 
     root_context = engine.rootContext()
     root_context.setContextProperty("filePathModel", file_path_model)
     root_context.setContextProperty("fileDialogModel", file_dialog_model)
+    root_context.setContextProperty("studioCardModel", studio_card_model)
     root_context.setContextProperty("consoleModel", console_model)
     root_context.setContextProperty(
         "renderMessageDialogContentModel", render_message_dialog_content_model

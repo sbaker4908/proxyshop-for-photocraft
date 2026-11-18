@@ -49,11 +49,42 @@ Item {
                 font.bold: true
             }
 
+Row {
+    id: cardSearchRow
+
+    anchors.top: parent.top
+    anchors.topMargin: 65
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.leftMargin: 20
+    anchors.rightMargin: 20
+
+    spacing: 8
+
+    TextField {
+        id: cardSearchField
+
+        width: parent.width - findCardButton.width - parent.spacing
+        placeholderText: "Search for a card..."
+
+        onAccepted: studioCardModel.lookup(text)
+    }
+
+    Button {
+        id: findCardButton
+        text: "Find"
+        enabled: !studioCardModel.loading
+                 && cardSearchField.text.trim().length > 0
+
+        onClicked: studioCardModel.lookup(cardSearchField.text)
+    }
+}
+
             Button {
                  id: chooseArtworkButton
                  text: "Choose Artwork..."
-                  anchors.top: parent.top
-                 anchors.topMargin: 70
+                 anchors.top: cardSearchRow.bottom
+                 anchors.topMargin: 12
                  anchors.left: parent.left
                  anchors.leftMargin: 20
 
@@ -62,6 +93,7 @@ Item {
 
             
 Image {
+    id: artworkThumbnail
     anchors.top: chooseArtworkButton.bottom
     anchors.topMargin: 16
     anchors.left: parent.left
@@ -74,6 +106,69 @@ Image {
     source: workspace.artworkUrl
     fillMode: Image.PreserveAspectFit
 }
+
+Column {
+    anchors.top: artworkThumbnail.bottom
+    anchors.topMargin: 16
+    anchors.left: parent.left
+    anchors.right: parent.right
+    anchors.leftMargin: 20
+    anchors.rightMargin: 20
+
+    spacing: 10
+
+    Text {
+        width: parent.width
+        text: studioCardModel.loading
+              ? "Looking up card..."
+              : studioCardModel.error
+        visible: studioCardModel.loading
+                 || studioCardModel.error.length > 0
+        color: "#E5A45B"
+        wrapMode: Text.WordWrap
+    }
+
+    Text {
+        width: parent.width
+        text: studioCardModel.card.name || ""
+        visible: text.length > 0
+        color: "white"
+        font.pixelSize: 18
+        font.bold: true
+        wrapMode: Text.WordWrap
+    }
+
+    Text {
+        width: parent.width
+        text: "Mana: " + (studioCardModel.card.mana_cost || "None")
+        visible: Boolean(studioCardModel.card.name)
+        color: "#CCCCCC"
+    }
+
+    Text {
+        width: parent.width
+        text: studioCardModel.card.type_line || ""
+        color: "#CCCCCC"
+        wrapMode: Text.WordWrap
+    }
+
+    Text {
+        width: parent.width
+        text: studioCardModel.card.oracle_text || ""
+        color: "#CCCCCC"
+        wrapMode: Text.WordWrap
+    }
+
+    Text {
+        width: parent.width
+        text: studioCardModel.card.power
+              ? studioCardModel.card.power + " / "
+                + studioCardModel.card.toughness
+              : ""
+        color: "#CCCCCC"
+    }
+}
+
 
 
         }
