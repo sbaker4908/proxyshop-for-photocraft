@@ -7,8 +7,12 @@ import QtQuick.Dialogs
 Item {
     id: workspace
 
-    // Artwork selection
+    // ==================================
+    // WORKSPACE STATE
+    // ==================================
+
     property url manualArtworkUrl: ""
+    property url previewCardUrl: ""
 
     readonly property string scryfallArtworkUrl:
         studioCardModel.card.art_crop || ""
@@ -21,7 +25,6 @@ Item {
     readonly property bool hasCustomArtwork:
         manualArtworkUrl.toString().length > 0
 
-    // Shared template selection from Proxyshop.
     readonly property int selectedTemplateIndex:
         templateListModel.selected_index
 
@@ -43,6 +46,10 @@ Item {
                 selectedTemplateIndex, "img") || "")
             : ""
 
+    // ==================================
+    // FILE PICKERS
+    // ==================================
+
     FileDialog {
         id: artworkPicker
         title: "Choose Card Artwork"
@@ -58,7 +65,26 @@ Item {
         }
     }
 
-    // Populate editable fields from Scryfall.
+    FileDialog {
+        id: renderPicker
+        title: "Open Finished Card"
+        fileMode: FileDialog.OpenFile
+        currentFolder: filePathModel.out_directory
+
+        nameFilters: [
+            "Rendered cards (*.png *.jpg *.jpeg *.webp)",
+            "All files (*)"
+        ]
+
+        onAccepted: {
+            workspace.previewCardUrl = selectedFile;
+        }
+    }
+
+    // ==================================
+    // SCRYFALL CARD DATA
+    // ==================================
+
     Connections {
         target: studioCardModel
 
@@ -130,7 +156,7 @@ Item {
                         Layout.bottomMargin: 12
                     }
 
-                    // Search
+                    // Card Search
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
@@ -183,7 +209,7 @@ Item {
                         placeholderText: "Card name"
                     }
 
-                    // Mana
+                    // Mana Cost
                     Text {
                         text: "Mana Cost"
                         color: "#B7BDC4"
@@ -195,7 +221,7 @@ Item {
                         placeholderText: "{G}, {2}{U}, etc."
                     }
 
-                    // Type
+                    // Type Line
                     Text {
                         text: "Type Line"
                         color: "#B7BDC4"
@@ -207,7 +233,7 @@ Item {
                         placeholderText: "Creature — Elf Druid"
                     }
 
-                    // Rules
+                    // Rules Text
                     Text {
                         text: "Rules Text"
                         color: "#B7BDC4"
@@ -231,7 +257,7 @@ Item {
                         bottomPadding: 12
                     }
 
-                    // Flavor
+                    // Flavor Text
                     Text {
                         text: "Flavor Text"
                         color: "#B7BDC4"
@@ -296,7 +322,7 @@ Item {
                         placeholderText: "Artist name"
                     }
 
-                    // Set and rarity
+                    // Set / Rarity
                     Text {
                         text: "Set / Rarity"
                         color: "#B7BDC4"
@@ -432,11 +458,85 @@ Item {
             color: "#1B1E22"
             border.color: "#34383E"
 
-            Text {
-                anchors.centerIn: parent
-                text: "Card Preview"
-                color: "#888888"
-                font.pixelSize: 22
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 18
+                spacing: 12
+
+                Text {
+                    text: "Card Preview"
+                    color: "white"
+                    font.pixelSize: 20
+                    font.bold: true
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Button {
+                        text: "Open Render..."
+                        onClicked: renderPicker.open()
+                    }
+
+                    Button {
+                        text: "Output Folder"
+                        onClicked: Qt.openUrlExternally(
+                            filePathModel.out_directory
+                        )
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    radius: 8
+                    color: "#141619"
+                    border.color: "#34383E"
+                    clip: true
+
+                    Image {
+                        id: renderedCardImage
+
+                        anchors.fill: parent
+                        anchors.margins: 20
+
+                        source: workspace.previewCardUrl
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        cache: false
+
+                        visible: workspace.previewCardUrl
+                            .toString().length > 0
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        width: parent.width - 48
+
+                        text: renderedCardImage.status === Image.Error
+                            ? "Could not load the selected card."
+                            : renderedCardImage.status === Image.Loading
+                                ? "Loading rendered card..."
+                                : "Open a completed render to preview it here."
+
+                        visible: renderedCardImage.status !== Image.Ready
+
+                        color: "#8F969E"
+                        font.pixelSize: 16
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Displays the finished card image, not the source artwork."
+                    color: "#8F969E"
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                }
             }
         }
 
@@ -481,8 +581,6 @@ Item {
                         font.bold: true
                     }
 
-                    // Uses the same template model as
-                    // Proxyshop's original Templates tab.
                     ComboBox {
                         id: templatePicker
                         Layout.fillWidth: true
@@ -493,7 +591,6 @@ Item {
                         currentIndex:
                             templateListModel.selected_index
 
-                        // Only allow installed templates.
                         onActivated: function(index) {
                             if (templateListModel.get_data(
                                     index, "is_installed")) {
@@ -540,7 +637,6 @@ Item {
                         font.pixelSize: 12
                     }
 
-                    // Existing template preview asset.
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 275
@@ -562,7 +658,6 @@ Item {
 
                         Text {
                             anchors.centerIn: parent
-
                             text: "No template preview available"
 
                             visible:
@@ -604,7 +699,7 @@ Item {
                         Layout.fillWidth: true
 
                         text: "Studio rendering will be connected "
-                              + "in the next development step."
+                              + "in an upcoming development step."
 
                         color: "#8F969E"
                         font.pixelSize: 12
