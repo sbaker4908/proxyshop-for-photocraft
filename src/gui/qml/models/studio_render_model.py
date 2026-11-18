@@ -1,0 +1,277 @@
+"""Studio-only render action using Proxyshop's existing render queue.
+
+The original top-right Render button and template-list workflow are untouched.
+"""
+from __future__ import annotations
+
+from asyncio import ensure_future, to_thread
+from logging import getLogger
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any
+
+import requests
+from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
+
+from src import DEFAULT_HEADERS
+from src._loader import PluginLibrary
+from src.cards import CardDetails
+from src.enums.mtg import LayoutScryfall, Rarity
+from src.gui.qml.models.file_dialog_model import FileDialogModel
+from src.gui.qml.models.message_dialog_content_model import MessageDialogContentModel
+from src.gui.qml.models.studio_card_model import StudioCardModel
+from src.gui.qml.models.template_list_model import TemplateListModel
+from src.render.render_queue import RenderQueue, RenderResult
+from src.render.setup import RenderOperation, prepare_render_operations
+from src.utils.scryfall import ScryfallCard
+
+_logger = getLogger(__name__)
+
+# Download bound is deliberately generous for a Scryfall art crop.
+_MAX_ART_BYTES = 40 * 1024 * 1024
+
+
+class StudioRenderModel(QObject):
+    """Prepare one Studio card and submit it to the shared Proxyshop queue."""
+
+    changed = Signal()
+    _started_on_gui = Signal()
+    _finished_on_gui = Signal(bool)
+
+    def __init__(
+        self,
+        card_model: StudioCardModel,
+        template_list_model: TemplateListModel,
+        plugin_library: PluginLibrary,
+        render_queue: RenderQueue,
+        file_dialog_model: FileDialogModel,
+        message_dialog_model: MessageDialogContentModel,
+    ) -> None:
+        super().__init__()
+        self._card_model = card_model
+        self._template_list_model = template_list_model
+        self._plugin_library = plugin_library
+        self._render_queue = render_queue
+        self._file_dialog_model = file_dialog_model
+        self._message_dialog_model = message_dialog_model
+        self._busy = False
+        self._status = "Look up a card to begin."
+        self._error = ""
+        self._active_operation: RenderOperation | None = None
+        self._art_temp_dir: TemporaryDirectory[str] | None = None
+
+        self._started_on_gui.connect(self._set_rendering_status)
+        self._finished_on_gui.connect(self._finish_render)
+        render_queue.started.add_listener(self._on_queue_started)
+        render_queue.finished.add_listener(self._on_queue_finished)
+
+    @Property(bool, notify=changed)
+    def busy(self) -> bool:
+        return self._busy
+
+    @Property(str, notify=changed)
+    def status(self) -> str:
+        return self._status
+
+    @Property(str, notify=changed)
+    def error(self) -> str:
+        return self._error
+
+    @Slot("QVariantMap")  # pyright: ignore[reportArgumentType]
+    def render_card(self, values: dict[str, Any]) -> None:
+        """Called only by Studio's own button, never the original Render button."""
+        if self._busy:
+            return
+        if self._card_model.loading:
+            self._set_error("Finish the Scryfall lookup before rendering.")
+            return
+        source = self._card_model.copy_source()
+        if source is None:
+            self._set_error("Search for a Scryfall card first.")
+            return
+        idx = self._template_list_model.selected_index
+        if not 0 <= idx < len(self._template_list_model.items):
+            self._set_error("Choose a template first.")
+            return
+        selected = self._template_list_model.items[idx]
+        if not selected.is_installed:
+            self._set_error("Install the selected template before rendering.")
+            return
+
+        self._busy = True
+        self._error = ""
+        self._status = "Preparing card and artwork..."
+        self.changed.emit()
+        form = {str(k): str(v) for k, v in values.items()}
+        # asyncio is already integrated with the Qt event loop by main.py.
+        ensure_future(self._prepare_and_enqueue(form, source, selected.assembled_template))
+
+    async def _prepare_and_enqueue(
+        self,
+        form: dict[str, str],
+        source: ScryfallCard,
+        template: Any,
+    ) -> None:
+        art_temp_dir: TemporaryDirectory[str] | None = None
+        try:
+            if source.layout != LayoutScryfall.Normal or source.card_faces:
+                raise ValueError(
+                    "Studio Render currently supports single-faced normal cards. "
+                    "Use the original Render button for this card's special layout."
+                )
+
+            name = form.get("name", "").strip()
+            type_line = form.get("type_line", "").strip()
+            if not name or not type_line:
+                raise ValueError("Card name and type line are required.")
+
+            rarity = form.get("rarity", "").strip().lower()
+            if rarity:
+                try:
+                    source.rarity = Rarity(rarity)
+                except ValueError as exc:
+                    raise ValueError(
+                        "Unknown rarity. Use common, uncommon, rare, mythic, "
+                        "special, bonus or timeshifted."
+                    ) from exc
+
+            original_name = source.name
+            source.name = name
+            source.mana_cost = form.get("mana_cost", "").strip()
+            source.type_line = type_line
+            source.oracle_text = form.get("oracle_text", "")
+            source.flavor_text = form.get("flavor_text", "")
+            source.power = form.get("power", "").strip() or None
+            source.toughness = form.get("toughness", "").strip() or None
+            source.artist = form.get("artist", "").strip() or None
+            source.set = form.get("set", "").strip().lower() or source.set
+
+            manual_artwork = form.get("manual_artwork", "").strip()
+            art_path, art_temp_dir = await to_thread(
+                self._resolve_artwork, manual_artwork, source
+            )
+
+            card_details: CardDetails = {
+                "file": art_path,
+                "name": original_name,
+                "set": source.set,
+                "number": source.collector_number,
+                "artist": form.get("artist", "").strip(),
+                "creator": "",
+                "kwargs": {},
+            }
+
+            operations = await to_thread(
+                prepare_render_operations,
+                template,
+                self._plugin_library.template_library,
+                ((card_details, source),),
+                file_dialog=self._file_dialog_model,
+                message_dialog=self._message_dialog_model,
+            )
+            if len(operations) != 1:
+                raise ValueError(
+                    "Could not prepare this card with the selected template. "
+                    "Check the app log on the Templates tab for details."
+                )
+
+            # Keep the temporary Scryfall artwork alive until rendering finishes.
+            self._art_temp_dir = art_temp_dir
+            art_temp_dir = None
+            self._active_operation = operations[0]
+            self._status = "Queued for PhotoCraft..."
+            self.changed.emit()
+            self._render_queue.enqueue(self._active_operation)
+        except Exception as exc:
+            if art_temp_dir is not None:
+                art_temp_dir.cleanup()
+            if self._art_temp_dir is not None:
+                self._art_temp_dir.cleanup()
+                self._art_temp_dir = None
+            _logger.exception("Studio Render failed to prepare the card")
+            self._active_operation = None
+            self._busy = False
+            self._status = ""
+            self._error = str(exc)
+            self.changed.emit()
+
+    @staticmethod
+    def _resolve_artwork(
+        manual_url: str, source: ScryfallCard
+    ) -> tuple[Path, TemporaryDirectory[str] | None]:
+        """Use an existing image, or download Scryfall's art crop as a temporary file."""
+        if manual_url:
+            qurl = QUrl(manual_url)
+            if qurl.isLocalFile():
+                filename = qurl.toLocalFile()
+            elif qurl.scheme():
+                raise ValueError("Custom artwork must be a local file.")
+            else:
+                filename = manual_url
+            image_path = Path(filename)
+            if not image_path.is_file():
+                raise FileNotFoundError(f"Artwork file not found: {image_path}")
+            if image_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+                raise ValueError("Choose a PNG, JPG, or WebP artwork image.")
+            return image_path, None
+
+        image_uris = source.image_uris
+        if image_uris is None:
+            raise ValueError("No Scryfall artwork is available. Choose an image manually.")
+
+        temporary = TemporaryDirectory(prefix="mtg-proxy-studio-")
+        path = Path(temporary.name) / "scryfall-art.jpg"
+        try:
+            with requests.get(
+                str(image_uris.art_crop), headers=DEFAULT_HEADERS,
+                stream=True, timeout=(8, 40),
+            ) as response:
+                response.raise_for_status()
+                content_type = response.headers.get("Content-Type", "")
+                if content_type and not content_type.lower().startswith("image/"):
+                    raise ValueError("Scryfall returned something other than an image.")
+                size = 0
+                with path.open("wb") as output:
+                    for chunk in response.iter_content(chunk_size=65536):
+                        if not chunk:
+                            continue
+                        size += len(chunk)
+                        if size > _MAX_ART_BYTES:
+                            raise ValueError("The downloaded artwork is too large.")
+                        output.write(chunk)
+                if size == 0:
+                    raise ValueError("Scryfall artwork download was empty.")
+            return path, temporary
+        except Exception:
+            temporary.cleanup()
+            raise
+
+    def _on_queue_started(self, operation: RenderOperation) -> None:
+        if operation is self._active_operation:
+            self._started_on_gui.emit()
+
+    def _on_queue_finished(self, result: RenderResult) -> None:
+        if result["operation"] is self._active_operation:
+            self._finished_on_gui.emit(result["result"])
+
+    @Slot()
+    def _set_rendering_status(self) -> None:
+        if self._busy:
+            self._status = "Rendering in PhotoCraft..."
+            self.changed.emit()
+
+    @Slot(bool)
+    def _finish_render(self, success: bool) -> None:
+        self._active_operation = None
+        if self._art_temp_dir is not None:
+            self._art_temp_dir.cleanup()
+            self._art_temp_dir = None
+        self._busy = False
+        self._status = "Render complete!" if success else ""
+        self._error = "" if success else "Rendering failed. Check the application log."
+        self.changed.emit()
+
+    def _set_error(self, message: str) -> None:
+        self._error = message
+        self._status = ""
+        self.changed.emit()

@@ -36,6 +36,7 @@ def launch_gui(
     from src.gui.qml.models.settings_tree_model import SettingsTreeModel
     from src.gui.qml.models.studio_card_model import StudioCardModel
     from src.gui.qml.models.studio_render_preview_model import StudioRenderPreviewModel
+    from src.gui.qml.models.studio_render_model import StudioRenderModel
     from src.gui.qml.models.template_list_model import TemplateListModel
     from src.gui.qml.models.template_updater_model import TemplateUpdaterModel
     from src.gui.qml.models.test_renders_model import TestRendersModel
@@ -90,12 +91,21 @@ def launch_gui(
     photocraft_setup_model = PhotocraftSetupModel(APP)
     studio_card_model = StudioCardModel()
     studio_render_preview_model = StudioRenderPreviewModel(render_queue)
+    studio_render_model = StudioRenderModel(
+        card_model=studio_card_model,
+        template_list_model=template_list_model,
+        plugin_library=plugin_library,
+        render_queue=render_queue,
+        file_dialog_model=file_dialog_model,
+        message_dialog_model=render_message_dialog_content_model,
+    )
 
     root_context = engine.rootContext()
     root_context.setContextProperty("filePathModel", file_path_model)
     root_context.setContextProperty("fileDialogModel", file_dialog_model)
     root_context.setContextProperty("studioCardModel", studio_card_model)
     root_context.setContextProperty("studioRenderPreviewModel", studio_render_preview_model)
+    root_context.setContextProperty("studioRenderModel", studio_render_model)
     root_context.setContextProperty("consoleModel", console_model)
     root_context.setContextProperty(
         "renderMessageDialogContentModel", render_message_dialog_content_model

@@ -393,6 +393,7 @@ Item {
                 id: renderSettingsScroll
                 anchors.fill: parent
                 anchors.margins: 18
+                anchors.bottomMargin: 126
                 clip: true
                 ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
@@ -486,11 +487,70 @@ Item {
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: "The original Render button still uses Proxyshop's file-selection workflow. Studio edits are not rendered yet."
+                        text: "The original top-right Render button still uses Proxyshop's file-selection workflow."
                         color: "#8F969E"
                         font.pixelSize: 12
                         wrapMode: Text.WordWrap
                     }
+                }
+            }
+
+            // Studio-specific render action, separate from the original top bar.
+            Column {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 18
+                spacing: 8
+
+                Button {
+                    id: studioRenderButton
+                    width: parent.width
+                    height: 46
+                    text: studioRenderModel.busy ? "Rendering..." : "Render Card"
+                    font.pixelSize: 16
+                    font.bold: true
+                    enabled: !studioRenderModel.busy
+                             && !studioCardModel.loading
+                             && Boolean(studioCardModel.card.name)
+                             && workspace.selectedTemplateInstalled
+                    background: Rectangle {
+                        radius: 7
+                        color: studioRenderButton.enabled ? "#198754" : "#33433b"
+                        border.color: studioRenderButton.enabled ? "#37b276" : "#48564d"
+                    }
+                    contentItem: Text {
+                        text: studioRenderButton.text
+                        color: studioRenderButton.enabled ? "white" : "#aeb9b1"
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+                    onClicked: studioRenderModel.render_card({
+                        name: cardName.text,
+                        mana_cost: manaCost.text,
+                        type_line: typeLine.text,
+                        oracle_text: rulesText.text,
+                        flavor_text: flavorText.text,
+                        power: power.text,
+                        toughness: toughness.text,
+                        artist: artist.text,
+                        set: setCode.text,
+                        rarity: rarity.text,
+                        manual_artwork: workspace.hasCustomArtwork
+                            ? workspace.manualArtworkUrl.toString() : ""
+                    })
+                }
+                Text {
+                    width: parent.width
+                    height: 48
+                    text: studioRenderModel.error.length > 0
+                        ? studioRenderModel.error : studioRenderModel.status
+                    color: studioRenderModel.error.length > 0 ? "#e8a47f" : "#a3b2a9"
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
                 }
             }
         }
