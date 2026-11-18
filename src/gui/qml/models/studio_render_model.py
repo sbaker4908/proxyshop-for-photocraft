@@ -16,7 +16,9 @@ from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
 from src import DEFAULT_HEADERS
 from src._loader import PluginLibrary
 from src.cards import CardDetails
-from src.enums.mtg import LayoutScryfall, Rarity
+from src._config import AppConfig
+from src.enums.settings import BorderlessTextbox
+from src.enums.mtg import LayoutScryfall, LayoutType, Rarity
 from src.gui.qml.models.file_dialog_model import FileDialogModel
 from src.gui.qml.models.message_dialog_content_model import MessageDialogContentModel
 from src.gui.qml.models.studio_card_model import StudioCardModel
@@ -88,6 +90,87 @@ class StudioRenderModel(QObject):
     def last_output_url(self) -> str:
         """Confirmed output URI of the latest successful Studio render."""
         return self._last_output_url
+
+    # V1 option support is based on the actual template class, not its display name.
+    # Other templates get no custom settings until we explicitly support them.
+    @Slot(int, result=bool)
+    def supports_borderless_options(self, template_index: int) -> bool:
+        if not 0 <= template_index < len(self._template_list_model.items):
+            return False
+        chosen = self._template_list_model.items[template_index]
+        if not chosen.is_installed:
+            return False
+        try:
+            match = chosen.assembled_template.get_class_name_and_file_for_layout(
+                LayoutType.Normal
+            )
+            return match is not None and match[0] == "BorderlessVectorTemplate"
+        except Exception:
+            _logger.exception("Unable to read Borderless template capabilities")
+            return False
+
+    @Slot(int, result="QVariantMap")  # pyright: ignore[reportArgumentType]
+    def borderless_defaults(self, template_index: int) -> dict[str, Any]:
+        """Load the template's actual saved defaults, without changing them."""
+        defaults: dict[str, Any] = {
+            "textbox_size": "Automatic",
+            "textless": False,
+            "drop_shadow": True,
+        }
+        if not self.supports_borderless_options(template_index):
+            return defaults
+        try:
+            chosen = self._template_list_model.items[template_index]
+            match = chosen.assembled_template.get_class_name_and_file_for_layout(
+                LayoutType.Normal
+            )
+            if match is None:
+                return defaults
+            cfg = chosen.assembled_template.get_config(match[0])
+            if cfg is None:
+                return defaults
+            saved_size = str(cfg.get_setting("FRAME", "Textbox.Size", "Automatic"))
+            if saved_size in {"Automatic", "Short", "Medium", "Normal", "Tall"}:
+                defaults["textbox_size"] = saved_size
+            defaults["textless"] = bool(
+                cfg.get_bool_setting("FRAME", "Textless", False)
+            ) or saved_size == "Textless"
+            defaults["drop_shadow"] = bool(
+                cfg.get_bool_setting("TEXT", "Drop.Shadow", True)
+            )
+        except Exception:
+            _logger.exception("Unable to read saved Borderless options")
+        return defaults
+
+    @staticmethod
+    def _validate_borderless_options(form: dict[str, str]) -> None:
+        size = form.get("template_textbox_size", "Automatic")
+        if size not in {"Automatic", "Short", "Medium", "Normal", "Tall"}:
+            raise ValueError(f"Invalid Borderless textbox size: {size}")
+        BorderlessTextbox(size)
+        if (form.get("template_textless", "false").lower() not in {"true", "false"}
+                or form.get("template_drop_shadow", "true").lower() not in {"true", "false"}):
+            raise ValueError("Invalid Borderless switch option")
+
+    @staticmethod
+    def _apply_borderless_options(config: AppConfig, form: dict[str, str]) -> None:
+        """Override just this render's merged config. Never write to an INI file."""
+        size = form.get("template_textbox_size", "Automatic")
+        if size not in {"Automatic", "Short", "Medium", "Normal", "Tall"}:
+            raise ValueError(f"Invalid Borderless textbox size: {size}")
+        # Explicit booleans from the QML payload; do not use bool("false").
+        textless = form.get("template_textless", "false").lower()
+        shadow = form.get("template_drop_shadow", "true").lower()
+        if textless not in {"true", "false"} or shadow not in {"true", "false"}:
+            raise ValueError("Invalid Borderless switch option")
+
+        for section in ("FRAME", "TEXT"):
+            if not config.file.has_section(section):
+                config.file.add_section(section)
+        # Borderless size is ignored when Textless is enabled by the renderer.
+        config.file.set("FRAME", "Textbox.Size", size)
+        config.file.set("FRAME", "Textless", textless)
+        config.file.set("TEXT", "Drop.Shadow", shadow)
 
     @Slot("QVariantMap")  # pyright: ignore[reportArgumentType]
     def render_card(self, values: dict[str, Any]) -> None:
@@ -189,6 +272,21 @@ class StudioRenderModel(QObject):
                     "Could not prepare this card with the selected template. "
                     "Check the app log on the Templates tab for details."
                 )
+
+            # Only the built-in Borderless Vector class receives these controls.
+            # The original toolbar and all other templates stay unchanged.
+            operation = operations[0]
+            if operation.template_class.__name__ == "BorderlessVectorTemplate":
+                # Validate before queueing so bad options fail in Studio, not during render.
+                self._validate_borderless_options(form)
+                previous_callback = operation.before_render_callback
+
+                def apply_studio_options(op: RenderOperation, cfg: AppConfig) -> None:
+                    if previous_callback is not None:
+                        previous_callback(op, cfg)
+                    self._apply_borderless_options(cfg, form)
+
+                operation.before_render_callback = apply_studio_options
 
             # Keep the temporary Scryfall artwork alive until rendering finishes.
             self._art_temp_dir = art_temp_dir

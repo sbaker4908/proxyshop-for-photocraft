@@ -15,6 +15,26 @@ Item {
     property string pendingRenderSignature: ""
     property string lastRenderedSignature: ""
 
+    // Template Options V1: keep Borderless selections during this Studio session.
+    property string borderlessTextboxSize: "Automatic"
+    property bool borderlessTextless: false
+    property bool borderlessDropShadow: true
+    property bool borderlessOptionsInitialized: false
+    readonly property bool showBorderlessOptions:
+        studioRenderModel.supports_borderless_options(selectedTemplateIndex)
+
+    function loadBorderlessOptionsOnce() {
+        if (!showBorderlessOptions || borderlessOptionsInitialized)
+            return;
+        const defaults = studioRenderModel.borderless_defaults(selectedTemplateIndex);
+        borderlessTextboxSize = defaults.textbox_size || "Automatic";
+        borderlessTextless = Boolean(defaults.textless);
+        borderlessDropShadow = Boolean(defaults.drop_shadow);
+        borderlessOptionsInitialized = true;
+    }
+    onSelectedTemplateIndexChanged: loadBorderlessOptionsOnce()
+    Component.onCompleted: loadBorderlessOptionsOnce()
+
     readonly property string currentEditorSignature: JSON.stringify([
         studioCardModel.card.art_crop || "",
         studioCardModel.card.name || "",
@@ -27,7 +47,12 @@ Item {
         selectedTemplateName,
         selectedTemplateIndex >= 0
             ? (templateListModel.get_data(selectedTemplateIndex, "plugin_id") || "")
-            : ""
+            : "",
+        // Options only matter for the Borderless template; other previews
+        // are unaffected when these hidden values change.
+        showBorderlessOptions ? borderlessTextboxSize : "",
+        showBorderlessOptions ? borderlessTextless : false,
+        showBorderlessOptions ? borderlessDropShadow : false
     ])
 
     // The queue reports whether this specific preview came from Studio.
@@ -120,7 +145,10 @@ Item {
             artist: artist.text,
             set: setCode.text,
             rarity: rarity.text,
-            manual_artwork: hasCustomArtwork ? manualArtworkUrl.toString() : ""
+            manual_artwork: hasCustomArtwork ? manualArtworkUrl.toString() : "",
+            template_textbox_size: borderlessTextboxSize,
+            template_textless: borderlessTextless ? "true" : "false",
+            template_drop_shadow: borderlessDropShadow ? "true" : "false"
         });
     }
 
@@ -815,6 +843,147 @@ Item {
                         font.pixelSize: 14
                         font.bold: true
                         horizontalAlignment: Text.AlignHCenter
+                    }
+                    // Template-specific options appear only when the selected
+                    // normal-card template actually uses BorderlessVectorTemplate.
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        visible: workspace.showBorderlessOptions
+                        spacing: 11
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 1
+                            Layout.topMargin: 8
+                            Layout.bottomMargin: 6
+                            color: workspace.stroke
+                        }
+                        Text {
+                            text: "TEMPLATE OPTIONS"
+                            font.pixelSize: 11
+                            font.bold: true
+                            color: "#a8b5bd"
+                        }
+                        Text {
+                            text: "Textbox size"
+                            color: "#c4cbd0"
+                            font.pixelSize: 12
+                        }
+                        ComboBox {
+                            id: borderlessSizePicker
+                            Layout.fillWidth: true
+                            enabled: !studioRenderModel.busy && !workspace.borderlessTextless
+                            model: ["Automatic", "Short", "Medium", "Normal", "Tall"]
+                            currentIndex: model.indexOf(workspace.borderlessTextboxSize)
+                            onActivated: function(index) {
+                                workspace.borderlessTextboxSize = model[index];
+                            }
+                            HoverHandler {
+                                enabled: borderlessSizePicker.enabled
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                            background: Rectangle {
+                                radius: 6
+                                color: borderlessSizePicker.enabled ? "#292d30" : "#222729"
+                                border.color: borderlessSizePicker.activeFocus ? "#49bb80" : "#42494f"
+                            }
+                            delegate: ItemDelegate {
+                                id: sizeOption
+                                required property string modelData
+                                required property int index
+                                width: borderlessSizePicker.width
+                                text: modelData
+                                highlighted: borderlessSizePicker.highlightedIndex === index
+                                HoverHandler {
+                                    enabled: sizeOption.enabled
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                            }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            visible: workspace.borderlessTextless
+                            text: "Textbox size is ignored in Textless mode."
+                            color: workspace.muted
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Text {
+                                text: "Textless mode"
+                                color: "#c4cbd0"
+                                font.pixelSize: 12
+                                Layout.fillWidth: true
+                            }
+                            Switch {
+                                id: borderlessTextlessSwitch
+                                text: ""
+                                enabled: !studioRenderModel.busy
+                                checked: workspace.borderlessTextless
+                                onToggled: workspace.borderlessTextless = checked
+                                HoverHandler {
+                                    enabled: borderlessTextlessSwitch.enabled
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                indicator: Rectangle {
+                                    implicitWidth: 38
+                                    implicitHeight: 22
+                                    x: borderlessTextlessSwitch.leftPadding
+                                    y: (parent.height - height) / 2
+                                    radius: 11
+                                    color: borderlessTextlessSwitch.checked ? "#28794f" : "#42494f"
+                                    border.color: borderlessTextlessSwitch.checked ? "#4aad7a" : "#606a70"
+                                    Rectangle {
+                                        x: borderlessTextlessSwitch.checked ? parent.width - width - 3 : 3
+                                        y: 3
+                                        width: 16
+                                        height: 16
+                                        radius: 8
+                                        color: "#f2f4f5"
+                                    }
+                                }
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Text {
+                                text: "Text drop shadow"
+                                color: "#c4cbd0"
+                                font.pixelSize: 12
+                                Layout.fillWidth: true
+                            }
+                            Switch {
+                                id: borderlessShadowSwitch
+                                text: ""
+                                enabled: !studioRenderModel.busy
+                                checked: workspace.borderlessDropShadow
+                                onToggled: workspace.borderlessDropShadow = checked
+                                HoverHandler {
+                                    enabled: borderlessShadowSwitch.enabled
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                indicator: Rectangle {
+                                    implicitWidth: 38
+                                    implicitHeight: 22
+                                    x: borderlessShadowSwitch.leftPadding
+                                    y: (parent.height - height) / 2
+                                    radius: 11
+                                    color: borderlessShadowSwitch.checked ? "#28794f" : "#42494f"
+                                    border.color: borderlessShadowSwitch.checked ? "#4aad7a" : "#606a70"
+                                    Rectangle {
+                                        x: borderlessShadowSwitch.checked ? parent.width - width - 3 : 3
+                                        y: 3
+                                        width: 16
+                                        height: 16
+                                        radius: 8
+                                        color: "#f2f4f5"
+                                    }
+                                }
+                            }
+                        }
                     }
                     Rectangle {
                         Layout.fillWidth: true
