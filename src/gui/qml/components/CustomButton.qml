@@ -10,6 +10,12 @@ Button {
     required property SystemPalette systemPalette
     property color bgColor: "transparent"
 
+    // Non-intercepting hover handler: cursor only, never steals clicks.
+    HoverHandler {
+        enabled: control.enabled
+        cursorShape: Qt.PointingHandCursor
+    }
+
     background: Rectangle {
         implicitHeight: 30
         implicitWidth: control.contentItem.implicitWidth

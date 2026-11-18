@@ -55,8 +55,10 @@ class StudioRenderModel(QObject):
         self._file_dialog_model = file_dialog_model
         self._message_dialog_model = message_dialog_model
         self._busy = False
+        self._phase = "idle"
         self._status = "Look up a card to begin."
         self._error = ""
+        self._last_output_url = ""
         self._active_operation: RenderOperation | None = None
         self._art_temp_dir: TemporaryDirectory[str] | None = None
 
@@ -70,12 +72,22 @@ class StudioRenderModel(QObject):
         return self._busy
 
     @Property(str, notify=changed)
+    def phase(self) -> str:
+        """One of idle, preparing, queued, rendering, complete or error."""
+        return self._phase
+
+    @Property(str, notify=changed)
     def status(self) -> str:
         return self._status
 
     @Property(str, notify=changed)
     def error(self) -> str:
         return self._error
+
+    @Property(str, notify=changed)
+    def last_output_url(self) -> str:
+        """Confirmed output URI of the latest successful Studio render."""
+        return self._last_output_url
 
     @Slot("QVariantMap")  # pyright: ignore[reportArgumentType]
     def render_card(self, values: dict[str, Any]) -> None:
@@ -99,6 +111,9 @@ class StudioRenderModel(QObject):
             return
 
         self._busy = True
+        # A new attempt cannot inherit the previous render's success URI.
+        self._last_output_url = ""
+        self._phase = "preparing"
         self._error = ""
         self._status = "Preparing card and artwork..."
         self.changed.emit()
@@ -179,7 +194,11 @@ class StudioRenderModel(QObject):
             self._art_temp_dir = art_temp_dir
             art_temp_dir = None
             self._active_operation = operations[0]
-            self._status = "Queued for PhotoCraft..."
+            # This marker lets the preview bridge distinguish this Studio
+            # render from the original toolbar's independent render jobs.
+            setattr(self._active_operation, "_studio_render_source", True)
+            self._phase = "queued"
+            self._status = "Waiting in render queue..."
             self.changed.emit()
             self._render_queue.enqueue(self._active_operation)
         except Exception as exc:
@@ -191,6 +210,7 @@ class StudioRenderModel(QObject):
             _logger.exception("Studio Render failed to prepare the card")
             self._active_operation = None
             self._busy = False
+            self._phase = "error"
             self._status = ""
             self._error = str(exc)
             self.changed.emit()
@@ -257,21 +277,35 @@ class StudioRenderModel(QObject):
     @Slot()
     def _set_rendering_status(self) -> None:
         if self._busy:
+            self._phase = "rendering"
             self._status = "Rendering in PhotoCraft..."
             self.changed.emit()
 
     @Slot(bool)
     def _finish_render(self, success: bool) -> None:
+        if success and self._active_operation is not None:
+            instance = self._active_operation.template_instance
+            if instance is not None:
+                try:
+                    output_path = instance.output_file_name
+                    if output_path.is_file() and output_path.suffix.lower() in {
+                        ".png", ".jpg", ".jpeg"
+                    }:
+                        self._last_output_url = output_path.resolve().as_uri()
+                except Exception:
+                    _logger.exception("Could not locate Studio render output")
         self._active_operation = None
         if self._art_temp_dir is not None:
             self._art_temp_dir.cleanup()
             self._art_temp_dir = None
         self._busy = False
+        self._phase = "complete" if success else "error"
         self._status = "Render complete!" if success else ""
         self._error = "" if success else "Rendering failed. Check the application log."
         self.changed.emit()
 
     def _set_error(self, message: str) -> None:
+        self._phase = "error"
         self._error = message
         self._status = ""
         self.changed.emit()

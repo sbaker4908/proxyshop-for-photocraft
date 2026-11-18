@@ -14,17 +14,23 @@ class StudioRenderPreviewModel(QObject):
     """Listen for completed renders, then notify QML on the GUI thread."""
 
     changed = Signal()
-    _render_ready = Signal(str)
+    _render_ready = Signal(str, bool)
 
     def __init__(self, render_queue: RenderQueue) -> None:
         super().__init__()
         self._preview_url: str = ""
+        self._preview_is_studio: bool = False
         self._render_ready.connect(self._update_preview)
         render_queue.finished.add_listener(self._on_render_finished)
 
     @Property(str, notify=changed)
     def preview_url(self) -> str:
         return self._preview_url
+
+    @Property(bool, notify=changed)
+    def preview_is_studio(self) -> bool:
+        """Whether the displayed successful export was submitted by Studio."""
+        return self._preview_is_studio
 
     def _on_render_finished(self, result: RenderResult) -> None:
         """Called by the render queue, potentially on its worker thread."""
@@ -44,12 +50,15 @@ class StudioRenderPreviewModel(QObject):
                 _logger.warning("Render succeeded but output was not found: %s", output_path)
                 return
 
-            # Cross-thread signal; the connected slot runs on the UI thread.
-            self._render_ready.emit(output_path.resolve().as_uri())
+            # Carry the queue operation's provenance across the thread boundary.
+            # The original top-right Render action never receives this marker.
+            is_studio = bool(getattr(result["operation"], "_studio_render_source", False))
+            self._render_ready.emit(output_path.resolve().as_uri(), is_studio)
         except Exception:
             _logger.exception("Could not resolve output path for Studio preview")
 
-    @Slot(str)
-    def _update_preview(self, url: str) -> None:
+    @Slot(str, bool)
+    def _update_preview(self, url: str, is_studio: bool) -> None:
         self._preview_url = url
+        self._preview_is_studio = is_studio
         self.changed.emit()

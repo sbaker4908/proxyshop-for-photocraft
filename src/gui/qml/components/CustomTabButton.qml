@@ -9,6 +9,11 @@ TabButton {
     required property SystemPalette systemPalette
     property color bgColor: "transparent"
 
+    HoverHandler {
+        enabled: control.enabled
+        cursorShape: Qt.PointingHandCursor
+    }
+
     leftPadding: 8
     rightPadding: 8
     spacing: 0

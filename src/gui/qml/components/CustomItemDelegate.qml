@@ -9,6 +9,11 @@ ItemDelegate {
     required property SystemPalette systemPalette
     property color bgColor: "transparent"
 
+    HoverHandler {
+        enabled: control.enabled
+        cursorShape: Qt.PointingHandCursor
+    }
+
     implicitHeight: 30
     padding: 0
     spacing: 0
