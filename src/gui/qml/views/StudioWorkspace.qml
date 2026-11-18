@@ -7,7 +7,7 @@ import QtQuick.Dialogs
 Item {
     id: workspace
 
-    // Custom artwork overrides the Scryfall default.
+    // Artwork selection
     property url manualArtworkUrl: ""
 
     readonly property string scryfallArtworkUrl:
@@ -20,6 +20,28 @@ Item {
 
     readonly property bool hasCustomArtwork:
         manualArtworkUrl.toString().length > 0
+
+    // Shared template selection from Proxyshop.
+    readonly property int selectedTemplateIndex:
+        templateListModel.selected_index
+
+    readonly property string selectedTemplateName:
+        selectedTemplateIndex >= 0
+            ? (templateListModel.get_data(
+                selectedTemplateIndex, "name") || "")
+            : ""
+
+    readonly property bool selectedTemplateInstalled:
+        selectedTemplateIndex >= 0
+            ? Boolean(templateListModel.get_data(
+                selectedTemplateIndex, "is_installed"))
+            : false
+
+    readonly property string selectedTemplatePreviewUrl:
+        selectedTemplateIndex >= 0
+            ? (templateListModel.get_data(
+                selectedTemplateIndex, "img") || "")
+            : ""
 
     FileDialog {
         id: artworkPicker
@@ -36,13 +58,12 @@ Item {
         }
     }
 
-    // Update editable fields when Scryfall returns a card.
+    // Populate editable fields from Scryfall.
     Connections {
         target: studioCardModel
 
         function onChanged() {
             if (studioCardModel.loading) {
-                // A new lookup resets the custom art override.
                 workspace.manualArtworkUrl = "";
                 return;
             }
@@ -75,7 +96,10 @@ Item {
         anchors.margins: 12
         spacing: 12
 
-        // LEFT: Card Details
+        // ==================================
+        // LEFT PANEL: CARD DETAILS
+        // ==================================
+
         Rectangle {
             Layout.preferredWidth: 320
             Layout.minimumWidth: 270
@@ -106,7 +130,7 @@ Item {
                         Layout.bottomMargin: 12
                     }
 
-                    // Card Search
+                    // Search
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 8
@@ -122,8 +146,7 @@ Item {
 
                         Button {
                             text: studioCardModel.loading
-                                  ? "..."
-                                  : "Find"
+                                ? "..." : "Find"
 
                             enabled: !studioCardModel.loading
                                 && cardSearchField.text.trim().length > 0
@@ -138,8 +161,8 @@ Item {
                         Layout.fillWidth: true
 
                         text: studioCardModel.loading
-                              ? "Looking up card..."
-                              : studioCardModel.error
+                            ? "Looking up card..."
+                            : studioCardModel.error
 
                         visible: studioCardModel.loading
                             || studioCardModel.error.length > 0
@@ -148,7 +171,7 @@ Item {
                         wrapMode: Text.WordWrap
                     }
 
-                    // Card Name
+                    // Name
                     Text {
                         text: "Name"
                         color: "#B7BDC4"
@@ -160,7 +183,7 @@ Item {
                         placeholderText: "Card name"
                     }
 
-                    // Mana Cost
+                    // Mana
                     Text {
                         text: "Mana Cost"
                         color: "#B7BDC4"
@@ -172,7 +195,7 @@ Item {
                         placeholderText: "{G}, {2}{U}, etc."
                     }
 
-                    // Type Line
+                    // Type
                     Text {
                         text: "Type Line"
                         color: "#B7BDC4"
@@ -184,7 +207,7 @@ Item {
                         placeholderText: "Creature — Elf Druid"
                     }
 
-                    // Rules Text
+                    // Rules
                     Text {
                         text: "Rules Text"
                         color: "#B7BDC4"
@@ -208,7 +231,7 @@ Item {
                         bottomPadding: 12
                     }
 
-                    // Flavor Text
+                    // Flavor
                     Text {
                         text: "Flavor Text"
                         color: "#B7BDC4"
@@ -273,7 +296,7 @@ Item {
                         placeholderText: "Artist name"
                     }
 
-                    // Set and Rarity
+                    // Set and rarity
                     Text {
                         text: "Set / Rarity"
                         color: "#B7BDC4"
@@ -304,7 +327,7 @@ Item {
                         color: "#34383E"
                     }
 
-                    // ARTWORK SECTION
+                    // Artwork
                     Text {
                         text: "Artwork"
                         color: "white"
@@ -312,8 +335,6 @@ Item {
                         font.pixelSize: 17
                     }
 
-                    // Auto-populated Scryfall art
-                    // or a manually selected image.
                     Image {
                         id: artworkPreview
 
@@ -334,7 +355,9 @@ Item {
 
                         text: artworkPreview.status === Image.Loading
                             ? "Loading artwork..."
-                            : "No artwork available"
+                            : artworkPreview.status === Image.Error
+                                ? "Could not load artwork"
+                                : "No artwork available"
 
                         visible: workspace.effectiveArtworkUrl
                             .toString().length === 0
@@ -351,7 +374,8 @@ Item {
                         text: workspace.hasCustomArtwork
                             ? "Custom artwork selected"
                             : "Scryfall artwork • "
-                              + (studioCardModel.card.artist || "Unknown artist")
+                              + (studioCardModel.card.artist
+                                  || "Unknown artist")
 
                         visible: artworkPreview.status === Image.Ready
 
@@ -365,14 +389,15 @@ Item {
 
                         Button {
                             text: workspace.hasCustomArtwork
-                                  ? "Replace Artwork..."
-                                  : "Choose Artwork..."
+                                ? "Replace Artwork..."
+                                : "Choose Artwork..."
 
                             onClicked: artworkPicker.open()
                         }
 
                         Button {
                             text: "Use Scryfall"
+
                             visible: workspace.hasCustomArtwork
                                 && workspace.scryfallArtworkUrl.length > 0
 
@@ -384,7 +409,6 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-
                         text: "Edits are local to this editor for now."
                         color: "#8F969E"
                         font.pixelSize: 11
@@ -395,7 +419,10 @@ Item {
             }
         }
 
-        // CENTER: Card Preview
+        // ==================================
+        // CENTER PANEL: CARD PREVIEW
+        // ==================================
+
         Rectangle {
             Layout.fillWidth: true
             Layout.minimumWidth: 250
@@ -413,9 +440,12 @@ Item {
             }
         }
 
-        // RIGHT: Render Settings
+        // ==================================
+        // RIGHT PANEL: RENDER SETTINGS
+        // ==================================
+
         Rectangle {
-            Layout.preferredWidth: 280
+            Layout.preferredWidth: 300
             Layout.minimumWidth: 240
             Layout.fillHeight: true
 
@@ -423,15 +453,164 @@ Item {
             color: "#1B1E22"
             border.color: "#34383E"
 
-            Text {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.margins: 20
+            ScrollView {
+                id: renderSettingsScroll
+                anchors.fill: parent
+                anchors.margins: 18
+                clip: true
 
-                text: "Render Settings"
-                color: "white"
-                font.pixelSize: 18
-                font.bold: true
+                ScrollBar.vertical.policy:
+                    ScrollBar.AsNeeded
+
+                ColumnLayout {
+                    width: renderSettingsScroll.availableWidth
+                    spacing: 12
+
+                    Text {
+                        text: "Render Settings"
+                        color: "white"
+                        font.pixelSize: 20
+                        font.bold: true
+                        Layout.bottomMargin: 12
+                    }
+
+                    Text {
+                        text: "Frame Template"
+                        color: "white"
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+
+                    // Uses the same template model as
+                    // Proxyshop's original Templates tab.
+                    ComboBox {
+                        id: templatePicker
+                        Layout.fillWidth: true
+
+                        model: templateListModel
+                        textRole: "name"
+
+                        currentIndex:
+                            templateListModel.selected_index
+
+                        // Only allow installed templates.
+                        onActivated: function(index) {
+                            if (templateListModel.get_data(
+                                    index, "is_installed")) {
+
+                                templateListModel.selected_index = index;
+
+                            } else {
+                                currentIndex =
+                                    templateListModel.selected_index;
+                            }
+                        }
+
+                        delegate: ItemDelegate {
+                            required property int index
+                            required property string name
+                            required property bool is_installed
+
+                            width: templatePicker.width
+
+                            text: name + (
+                                is_installed
+                                    ? ""
+                                    : " (not installed)"
+                            )
+
+                            enabled: is_installed
+
+                            highlighted:
+                                templatePicker.highlightedIndex === index
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+
+                        text: workspace.selectedTemplateInstalled
+                            ? "Installed and available"
+                            : "Template not installed"
+
+                        color: workspace.selectedTemplateInstalled
+                            ? "#72D59A"
+                            : "#E5A45B"
+
+                        font.pixelSize: 12
+                    }
+
+                    // Existing template preview asset.
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 275
+
+                        radius: 8
+                        color: "#141619"
+                        border.color: "#34383E"
+
+                        Image {
+                            anchors.fill: parent
+                            anchors.margins: 12
+
+                            source:
+                                workspace.selectedTemplatePreviewUrl
+
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+
+                            text: "No template preview available"
+
+                            visible:
+                                workspace.selectedTemplatePreviewUrl.length === 0
+
+                            color: "#8F969E"
+                            font.pixelSize: 12
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: workspace.selectedTemplateName
+                        color: "white"
+                        font.pixelSize: 15
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
+                        Layout.topMargin: 12
+                        color: "#34383E"
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+
+                        text: "Template selection is shared with "
+                              + "Proxyshop's rendering engine."
+
+                        color: "#8F969E"
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+
+                        text: "Studio rendering will be connected "
+                              + "in the next development step."
+
+                        color: "#8F969E"
+                        font.pixelSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+                }
             }
         }
     }
