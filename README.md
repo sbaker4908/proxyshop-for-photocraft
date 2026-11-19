@@ -2,6 +2,8 @@
 
 **Proxyshop for PhotoCraft** is a fork of [pappnu/Proxyshop](https://github.com/pappnu/Proxyshop), which is itself a fork of the original [Investigamer/Proxyshop](https://github.com/Investigamer/Proxyshop). This fork focuses on the PhotoCraft backend, template compatibility and the tooling needed to render cards without Adobe Photoshop.
 
+> **Studio and Trim additions:** See the [ProxyStudio guide](docs/PROXYSTUDIO.md) for the Studio editor, two-sided cards, PhotoCraft manual editing, and Trim.
+
 Please report issues in [this repository](https://github.com/EyvirAm/proxyshop-for-photocraft/issues). For general Proxyshop/community support, use the [Discord server](https://discord.gg/magic-proxies-889831317066358815)'s #proxyshop channel.
 
 <div align="center" markdown="1" style="font-size: large;">
