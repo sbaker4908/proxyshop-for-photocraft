@@ -7,7 +7,6 @@ from __future__ import annotations
 from asyncio import ensure_future, to_thread
 from logging import getLogger
 from pathlib import Path
-import subprocess
 from tempfile import TemporaryDirectory
 from typing import Any
 
@@ -27,8 +26,6 @@ from src.gui.qml.models.template_list_model import TemplateListModel
 from src.render.render_queue import RenderQueue, RenderResult
 from src.render.setup import RenderOperation, prepare_render_operations
 from src.utils.scryfall import ScryfallCard
-from src.utils.manual_edit import find_photocraft_app
-from src._state import PATH
 
 _logger = getLogger(__name__)
 
@@ -64,8 +61,6 @@ class StudioRenderModel(QObject):
         self._status = "Look up a card to begin."
         self._error = ""
         self._last_output_url = ""
-        self._launch_warning = ""
-        self._render_generation = 0
         self._active_operation: RenderOperation | None = None
         self._art_temp_dir: TemporaryDirectory[str] | None = None
 
@@ -95,11 +90,6 @@ class StudioRenderModel(QObject):
     def last_output_url(self) -> str:
         """Confirmed output URI of the latest successful Studio render."""
         return self._last_output_url
-
-    @Property(str, notify=changed)
-    def launch_warning(self) -> str:
-        """Nonfatal warning when a completed PSD could not be opened automatically."""
-        return self._launch_warning
 
     # V1 option support is based on the actual template class, not its display name.
     # Other templates get no custom settings until we explicitly support them.
@@ -227,8 +217,6 @@ class StudioRenderModel(QObject):
             return
 
         self._busy = True
-        self._render_generation += 1
-        self._launch_warning = ""
         # A new attempt cannot inherit the previous render's success URI.
         self._last_output_url = ""
         self._phase = "preparing"
@@ -334,12 +322,6 @@ class StudioRenderModel(QObject):
             # This marker lets the preview bridge distinguish this Studio
             # render from the original toolbar's independent render jobs.
             setattr(self._active_operation, "_studio_render_source", True)
-            # Preserve the requested output mode on the operation itself.
-            # This flag belongs to Studio, not the shared render pipeline.
-            setattr(
-                self._active_operation, "_studio_open_psd_in_photocraft",
-                form.get("editable_psd", "false").lower() == "true",
-            )
             self._phase = "queued"
             self._status = "Waiting in render queue..."
             self.changed.emit()
@@ -426,13 +408,8 @@ class StudioRenderModel(QObject):
 
     @Slot(bool)
     def _finish_render(self, success: bool) -> None:
-        """Finish this Studio render; optionally open its persistent PSD in PhotoCraft."""
-        finished_operation = self._active_operation
-        generation = self._render_generation
-        psd_to_open: Path | None = None
-
-        if success and finished_operation is not None:
-            instance = finished_operation.template_instance
+        if success and self._active_operation is not None:
+            instance = self._active_operation.template_instance
             if instance is not None:
                 try:
                     output_path = instance.output_file_name
@@ -440,73 +417,17 @@ class StudioRenderModel(QObject):
                         ".png", ".jpg", ".jpeg", ".psd"
                     }:
                         self._last_output_url = output_path.resolve().as_uri()
-                        if (
-                            output_path.suffix.lower() == ".psd"
-                            and getattr(
-                                finished_operation,
-                                "_studio_open_psd_in_photocraft",
-                                False,
-                            )
-                        ):
-                            psd_to_open = output_path.resolve()
                 except Exception:
                     _logger.exception("Could not locate Studio render output")
-
         self._active_operation = None
         if self._art_temp_dir is not None:
             self._art_temp_dir.cleanup()
             self._art_temp_dir = None
         self._busy = False
         self._phase = "complete" if success else "error"
-        self._status = (
-            "PSD saved. Opening PhotoCraft..." if psd_to_open is not None
-            else "Render complete!" if success else ""
-        )
+        self._status = "Render complete!" if success else ""
         self._error = "" if success else "Rendering failed. Check the application log."
         self.changed.emit()
-
-        # Do not pause rendering or close the user's editor. PhotoCraft is a
-        # standalone process, not a temporary ManualEditSession snapshot.
-        if psd_to_open is not None:
-            ensure_future(self._open_saved_psd(psd_to_open, generation))
-
-    @staticmethod
-    def _launch_photocraft(psd_path: Path) -> None:
-        """Start PhotoCraft without blocking Studio or taking ownership of its lifetime."""
-        editor_exe = find_photocraft_app()
-        if not editor_exe:
-            raise FileNotFoundError(
-                "PhotoCraft desktop app was not found. Open the saved PSD "
-                "from the output folder or set PHOTOCRAFT_APP to photocraft.exe."
-            )
-        if not psd_path.is_file():
-            raise FileNotFoundError(f"Saved PSD not found: {psd_path}")
-        # Match Proxyshop's working ManualEditSession launch syntax.
-        # We deliberately do not hold or terminate this process afterward.
-        subprocess.Popen(
-            [editor_exe, "--new-instance", str(psd_path)],
-            cwd=str(PATH.CWD),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-    async def _open_saved_psd(self, path: Path, generation: int) -> None:
-        """Attempt automatic opening; failure must not erase a successful export."""
-        try:
-            await to_thread(self._launch_photocraft, path)
-        except Exception as exc:
-            _logger.exception("Studio saved the PSD but could not open PhotoCraft")
-            if generation == self._render_generation:
-                self._launch_warning = (
-                    f"PSD saved, but PhotoCraft did not open: {exc}"
-                )
-                self._status = "PSD saved — open manually"
-                self.changed.emit()
-        else:
-            if generation == self._render_generation:
-                self._status = "Opened in PhotoCraft"
-                self.changed.emit()
 
     def _set_error(self, message: str) -> None:
         self._phase = "error"

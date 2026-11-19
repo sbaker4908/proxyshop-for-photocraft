@@ -663,48 +663,7 @@ Item {
                         enabled: !workspace.renderBusy
                         placeholderText: "Card abilities..."
                     }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-                        Text { text: "Flavor text"; color: "#c4cbd0"; font.pixelSize: 12; Layout.fillWidth: true }
-                        Text {
-                            text: "Include"
-                            font.pixelSize: 11
-                            color: workspace.includeFlavorText ? "#a7ddbd" : workspace.muted
-                        }
-                        Switch {
-                            id: includeFlavorSwitch
-                            text: ""
-                            implicitHeight: 23
-                            enabled: !workspace.renderBusy
-                            checked: workspace.includeFlavorText
-                            onToggled: {
-                                workspace.includeFlavorText = checked;
-                                workspace.captureCurrentFace();
-                            }
-                            HoverHandler {
-                                enabled: includeFlavorSwitch.enabled
-                                cursorShape: Qt.PointingHandCursor
-                            }
-                            indicator: Rectangle {
-                                implicitWidth: 38
-                                implicitHeight: 22
-                                x: includeFlavorSwitch.leftPadding
-                                y: (parent.height - height) / 2
-                                radius: 11
-                                color: includeFlavorSwitch.checked ? "#28794f" : "#42494f"
-                                border.color: includeFlavorSwitch.checked ? "#4aad7a" : "#606a70"
-                                Rectangle {
-                                    x: includeFlavorSwitch.checked ? parent.width - width - 3 : 3
-                                    y: 3
-                                    width: 16
-                                    height: 16
-                                    radius: 8
-                                    color: "#f2f4f5"
-                                }
-                            }
-                        }
-                    }
+                    Text { text: "Flavor text"; color: "#c4cbd0"; font.pixelSize: 12 }
                     StudioArea {
                         id: flavorText
                         onTextChanged: workspace.captureCurrentFace()
@@ -1341,6 +1300,48 @@ Item {
                         font.pixelSize: 11
                         font.bold: true
                         color: "#a8b5bd"
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            text: "Include flavor text"
+                            color: "#c4cbd0"
+                            font.pixelSize: 12
+                            Layout.fillWidth: true
+                        }
+                        Switch {
+                            id: includeFlavorSwitch
+                            text: ""
+                            implicitHeight: 23
+                            enabled: !workspace.renderBusy
+                            checked: workspace.includeFlavorText
+                            onToggled: {
+                                workspace.includeFlavorText = checked;
+                                workspace.captureCurrentFace();
+                            }
+                            HoverHandler {
+                                enabled: includeFlavorSwitch.enabled
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                            indicator: Rectangle {
+                                implicitWidth: 38
+                                implicitHeight: 22
+                                x: includeFlavorSwitch.leftPadding
+                                y: (parent.height - height) / 2
+                                radius: 11
+                                color: includeFlavorSwitch.checked ? "#28794f" : "#42494f"
+                                border.color: includeFlavorSwitch.checked ? "#4aad7a" : "#606a70"
+                                Rectangle {
+                                    x: includeFlavorSwitch.checked ? parent.width - width - 3 : 3
+                                    y: 3
+                                    width: 16
+                                    height: 16
+                                    radius: 8
+                                    color: "#f2f4f5"
+                                }
+                            }
+                        }
                     }
                     RowLayout {
                         Layout.fillWidth: true
