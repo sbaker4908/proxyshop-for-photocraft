@@ -237,7 +237,7 @@ Item {
         || studioDualRenderModel.supports_layout(selectedTemplateIndex, studioCardModel.card.layout_kind || "")
     readonly property string missingRequirement: {
         if (studioCardModel.loading) return "Looking up card details...";
-        if (!studioCardModel.card.name) return "Find a card to get started.";
+        if (!studioCardModel.card.layout_kind) return "Find a card or create a new one.";
         if (studioCardModel.card.studio_compatible === "no")
             return "Use the original Render button for this special layout.";
         if (faceDrafts.length !== (isDualFace ? 2 : 1))
@@ -430,7 +430,7 @@ Item {
                 workspace.loadingFaceFields = false;
                 return;
             }
-            if (studioCardModel.card.name)
+            if (studioCardModel.card.layout_kind)
                 workspace.initializeFaces();
         }
     }
@@ -492,6 +492,69 @@ Item {
         }
     }
 
+    // A small creation menu; the existing Studio form handles all layouts.
+    Popup {
+        id: createCardPopup
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        width: 318
+        padding: 17
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle {
+            radius: 10
+            color: "#22282c"
+            border.color: "#506459"
+            border.width: 1
+        }
+        ColumnLayout {
+            width: parent.width
+            spacing: 10
+            Text {
+                text: "Create Card"
+                color: "#f5f7f6"
+                font.bold: true
+                font.pixelSize: 19
+            }
+            Text {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Choose a layout. Start with blank fields and add your own artwork."
+                color: workspace.muted
+                font.pixelSize: 12
+                Layout.bottomMargin: 6
+            }
+            StudioButton {
+                Layout.fillWidth: true
+                text: "Normal  ·  Single face"
+                onClicked: {
+                    studioCardModel.create_card("normal");
+                    cardSearchField.text = "";
+                    createCardPopup.close();
+                }
+            }
+            StudioButton {
+                Layout.fillWidth: true
+                text: "Transform  ·  Front + back"
+                onClicked: {
+                    studioCardModel.create_card("transform");
+                    cardSearchField.text = "";
+                    createCardPopup.close();
+                }
+            }
+            StudioButton {
+                Layout.fillWidth: true
+                text: "Modal DFC  ·  Front + back"
+                onClicked: {
+                    studioCardModel.create_card("mdfc");
+                    cardSearchField.text = "";
+                    createCardPopup.close();
+                }
+            }
+        }
+    }
+
     Rectangle { anchors.fill: parent; color: "#111416" }
 
     RowLayout {
@@ -521,7 +584,7 @@ Item {
 
                     Text { text: "Card Details"; font.pixelSize: 20; font.bold: true; color: "#f5f6f7" }
                     Text {
-                        text: "Search, customize, and render a single card."
+                        text: "Find an existing card or create one from scratch."
                         color: workspace.muted
                         font.pixelSize: 12
                         Layout.fillWidth: true
@@ -545,6 +608,13 @@ Item {
                                 && cardSearchField.text.trim().length > 0
                             onClicked: studioCardModel.lookup(cardSearchField.text)
                         }
+                    }
+                    StudioButton {
+                        Layout.fillWidth: true
+                        subtle: true
+                        text: "+ Create Card"
+                        enabled: !studioCardModel.loading && !workspace.renderBusy
+                        onClicked: createCardPopup.open()
                     }
 
                     RowLayout {
@@ -777,7 +847,9 @@ Item {
                             font.pixelSize: 12
                             visible: artworkPreview.status === Image.Null || artworkPreview.status === Image.Error
                             text: artworkPreview.status === Image.Error
-                                ? "Artwork preview could not be loaded" : "Find a card or choose an image"
+                                ? "Artwork preview could not be loaded"
+                                : studioCardModel.card.is_custom ? "Choose artwork for this face"
+                                : "Find a card or choose an image"
                         }
                     }
                     Text {

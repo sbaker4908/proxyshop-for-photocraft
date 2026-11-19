@@ -13,6 +13,7 @@ from src import CFG
 from src.cards import get_card_data
 from src.enums.mtg import LayoutScryfall
 from src.utils.scryfall import ScryfallCard, ScryfallCardFace
+from src.gui.qml.models.studio_custom_card import create_blank_card_source
 
 
 class LookupResult(TypedDict):
@@ -66,6 +67,42 @@ class StudioCardModel(QObject):
             "include_flavor_text": "true",
             "manual_artwork": "",
         }
+
+    @Slot(str)
+    def create_card(self, layout_kind: str) -> None:
+        """Start an original card without making a Scryfall API request."""
+        if self._loading:
+            return
+        try:
+            source = create_blank_card_source(layout_kind)
+        except ValueError as exc:
+            self._error = str(exc)
+            self.changed.emit()
+            return
+
+        faces = (
+            source.card_faces if source.card_faces is not None
+            else [source]
+        )
+        editor_faces = []
+        for face in faces:
+            form = self._face_as_editor_data(face, source)
+            # The source uses private structural placeholders. The editor
+            # starts genuinely blank, including the name and type line.
+            form["name"] = ""
+            form["type_line"] = ""
+            editor_faces.append(form)
+
+        self._source = source
+        self._error = ""
+        self._card = {
+            **editor_faces[0],
+            "layout_kind": layout_kind,
+            "studio_compatible": "yes",
+            "is_custom": True,
+            "faces": editor_faces,
+        }
+        self.changed.emit()
 
     @Slot(str)
     def lookup(self, name: str) -> None:
