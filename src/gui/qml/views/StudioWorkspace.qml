@@ -14,12 +14,18 @@ Item {
     // These are local UI snapshots, not an attempt to inspect the exported JPG.
     property string pendingRenderSignature: ""
     property string lastRenderedSignature: ""
+    property string lastPsdSignature: ""
 
     // Template Options V1: keep Borderless selections during this Studio session.
     property string borderlessTextboxSize: "Automatic"
     property bool borderlessTextless: false
     property bool borderlessDropShadow: true
     property bool borderlessOptionsInitialized: false
+
+    // Global Studio-only options. Scryfall flavor text stays editable even when
+    // excluded from export. Manual edit saves a PSD, then launches PhotoCraft.
+    property bool includeFlavorText: true
+    property bool saveEditablePsd: false
     readonly property bool showBorderlessOptions:
         studioRenderModel.supports_borderless_options(selectedTemplateIndex)
 
@@ -41,6 +47,7 @@ Item {
         studioCardModel.card.set || "",
         cardName.text, manaCost.text, typeLine.text,
         rulesText.text, flavorText.text,
+        includeFlavorText, saveEditablePsd,
         power.text, toughness.text, artist.text,
         setCode.text, rarity.text,
         effectiveArtworkUrl.toString(),
@@ -58,6 +65,12 @@ Item {
     // The queue reports whether this specific preview came from Studio.
     // Compare that provenance and the submitted form snapshot instead of
     // comparing URL strings (which Qt may normalize differently).
+    readonly property bool currentPsdSaved:
+        lastPsdSignature.length > 0
+        && lastPsdSignature === currentEditorSignature
+        && studioRenderModel.last_output_url.toLowerCase().endsWith(".psd")
+        && renderedCardImage.status === Image.Null
+
     readonly property bool previewIsCurrent:
         renderedCardImage.status === Image.Ready
         && lastRenderedSignature.length > 0
@@ -66,16 +79,17 @@ Item {
 
     readonly property string previewBadgeText:
         studioRenderModel.busy ? "RENDERING"
+        : currentPsdSaved ? "PSD EXPORTED"
         : renderedCardImage.status !== Image.Ready ? "NO PREVIEW"
         : previewIsCurrent ? "CURRENT PREVIEW" : "NEEDS RENDER"
 
     readonly property string previewBadgeBackground:
-        previewBadgeText === "CURRENT PREVIEW" ? "#26372f"
+        previewBadgeText === "CURRENT PREVIEW" || previewBadgeText === "PSD EXPORTED" ? "#26372f"
         : previewBadgeText === "NEEDS RENDER" ? "#373127"
         : previewBadgeText === "RENDERING" ? "#2c353c" : "#30363b"
 
     readonly property string previewBadgeForeground:
-        previewBadgeText === "CURRENT PREVIEW" ? "#b4d8c3"
+        previewBadgeText === "CURRENT PREVIEW" || previewBadgeText === "PSD EXPORTED" ? "#b4d8c3"
         : previewBadgeText === "NEEDS RENDER" ? "#dec8a2"
         : previewBadgeText === "RENDERING" ? "#b7cdd9" : "#aab3bb"
 
@@ -122,7 +136,12 @@ Item {
         : studioRenderModel.busy
             ? (studioRenderModel.status || "Rendering in PhotoCraft...")
         : missingRequirement.length > 0 ? "Not ready to render"
-        : studioRenderModel.phase === "complete" ? "Render complete"
+        : studioRenderModel.phase === "complete" && currentPsdSaved
+            ? (studioRenderModel.launch_warning.length > 0
+                ? "PSD saved · open manually"
+                : studioRenderModel.status === "Opened in PhotoCraft"
+                    ? "Opened in PhotoCraft" : "PSD saved")
+        : studioRenderModel.phase === "complete" && previewIsCurrent ? "Render complete"
         : "Ready to render"
 
     readonly property color accent: "#44bf7e"
@@ -140,6 +159,8 @@ Item {
             type_line: typeLine.text,
             oracle_text: rulesText.text,
             flavor_text: flavorText.text,
+            include_flavor_text: includeFlavorText ? "true" : "false",
+            editable_psd: saveEditablePsd ? "true" : "false",
             power: power.text,
             toughness: toughness.text,
             artist: artist.text,
@@ -297,9 +318,16 @@ Item {
         target: studioRenderModel
         function onChanged() {
             if (studioRenderModel.phase === "complete" && workspace.pendingRenderSignature) {
-                // The bridge exposes a URL only for a verified Studio export.
-                if (studioRenderModel.last_output_url.length > 0)
+                const url = studioRenderModel.last_output_url.toLowerCase();
+                if (url.endsWith(".psd")) {
+                    // A PSD is not a viewable bitmap. Show a clear export-success state.
+                    workspace.lastPsdSignature = workspace.pendingRenderSignature;
+                    workspace.lastRenderedSignature = "";
+                    workspace.previewCardUrl = "";
+                } else if (url.length > 0) {
                     workspace.lastRenderedSignature = workspace.pendingRenderSignature;
+                    workspace.lastPsdSignature = "";
+                }
                 workspace.pendingRenderSignature = "";
             } else if (studioRenderModel.phase === "error") {
                 workspace.pendingRenderSignature = "";
@@ -419,11 +447,50 @@ Item {
                         enabled: !studioRenderModel.busy
                         placeholderText: "Card abilities..."
                     }
-                    Text { text: "Flavor text"; color: "#c4cbd0"; font.pixelSize: 12 }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text { text: "Flavor text"; color: "#c4cbd0"; font.pixelSize: 12; Layout.fillWidth: true }
+                        Text {
+                            text: "Include"
+                            font.pixelSize: 11
+                            color: workspace.includeFlavorText ? "#a7ddbd" : workspace.muted
+                        }
+                        Switch {
+                            id: includeFlavorSwitch
+                            text: ""
+                            implicitHeight: 23
+                            enabled: !studioRenderModel.busy
+                            checked: workspace.includeFlavorText
+                            onToggled: workspace.includeFlavorText = checked
+                            HoverHandler {
+                                enabled: includeFlavorSwitch.enabled
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                            indicator: Rectangle {
+                                implicitWidth: 38
+                                implicitHeight: 22
+                                x: includeFlavorSwitch.leftPadding
+                                y: (parent.height - height) / 2
+                                radius: 11
+                                color: includeFlavorSwitch.checked ? "#28794f" : "#42494f"
+                                border.color: includeFlavorSwitch.checked ? "#4aad7a" : "#606a70"
+                                Rectangle {
+                                    x: includeFlavorSwitch.checked ? parent.width - width - 3 : 3
+                                    y: 3
+                                    width: 16
+                                    height: 16
+                                    radius: 8
+                                    color: "#f2f4f5"
+                                }
+                            }
+                        }
+                    }
                     StudioArea {
                         id: flavorText
                         Layout.fillWidth: true
                         minimumEditorHeight: 84
+                        // Keep the Scryfall text editable even while exclusion is enabled.
                         enabled: !studioRenderModel.busy
                         placeholderText: "Optional flavor text..."
                     }
@@ -656,7 +723,7 @@ Item {
                         radius: 12
                         color: workspace.previewBadgeBackground
                         border.width: 1
-                        border.color: workspace.previewBadgeText === "CURRENT PREVIEW" ? "#3d5b48"
+                        border.color: workspace.previewBadgeText === "CURRENT PREVIEW" || workspace.previewBadgeText === "PSD EXPORTED" ? "#3d5b48"
                             : workspace.previewBadgeText === "NEEDS RENDER" ? "#5b4d37"
                             : "#3d474d"
 
@@ -705,6 +772,7 @@ Item {
                             width: parent.width
                             text: renderedCardImage.status === Image.Error
                                 ? "Preview unavailable"
+                                : workspace.currentPsdSaved ? "Editable PSD saved"
                                 : "Your rendered card will appear here"
                             font.pixelSize: 17
                             font.bold: true
@@ -716,7 +784,9 @@ Item {
                             width: parent.width
                             text: renderedCardImage.status === Image.Error
                                 ? "Check the output folder for the exported file."
-                                : "Click Render Card to create a preview."
+                                : workspace.currentPsdSaved
+                                    ? "The layered PSD was saved. PhotoCraft opens automatically when available."
+                                    : "Click Render Card to create a preview."
                             font.pixelSize: 12
                             color: workspace.muted
                             horizontalAlignment: Text.AlignHCenter
@@ -993,6 +1063,73 @@ Item {
                         color: workspace.stroke
                     }
                     Text {
+                        text: "OUTPUT"
+                        font.pixelSize: 11
+                        font.bold: true
+                        color: "#a8b5bd"
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 3
+                            Text { text: "Manual edit in PhotoCraft"; color: "#c4cbd0"; font.pixelSize: 12 }
+                            Text {
+                                Layout.fillWidth: true
+                                text: "Save a layered PSD and open it automatically"
+                                color: workspace.muted
+                                font.pixelSize: 11
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                        Switch {
+                            id: editablePsdSwitch
+                            text: ""
+                            enabled: !studioRenderModel.busy
+                            checked: workspace.saveEditablePsd
+                            onToggled: workspace.saveEditablePsd = checked
+                            HoverHandler {
+                                enabled: editablePsdSwitch.enabled
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                            indicator: Rectangle {
+                                implicitWidth: 38
+                                implicitHeight: 22
+                                x: editablePsdSwitch.leftPadding
+                                y: (parent.height - height) / 2
+                                radius: 11
+                                color: editablePsdSwitch.checked ? "#28794f" : "#42494f"
+                                border.color: editablePsdSwitch.checked ? "#4aad7a" : "#606a70"
+                                Rectangle {
+                                    x: editablePsdSwitch.checked ? parent.width - width - 3 : 3
+                                    y: 3
+                                    width: 16
+                                    height: 16
+                                    radius: 8
+                                    color: "#f2f4f5"
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: workspace.saveEditablePsd
+                        text: "The PSD stays in your output folder. Use Save As in PhotoCraft for .pcraft or other formats."
+                        color: workspace.muted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: studioRenderModel.launch_warning.length > 0
+                        text: studioRenderModel.launch_warning
+                        color: "#d6c7a6"
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; Layout.topMargin: 7; Layout.bottomMargin: 4; color: workspace.stroke }
+                    Text {
                         Layout.fillWidth: true
                         text: "The original Render button at the top remains available for batch and file-based workflows."
                         color: workspace.muted
@@ -1033,7 +1170,7 @@ Item {
                         Layout.fillWidth: true
                         primary: true
                         enabled: workspace.canRender
-                        text: studioRenderModel.busy ? "Working..." : "Render Card"
+                        text: studioRenderModel.busy ? "Working..." : workspace.saveEditablePsd ? "Render & Edit" : "Render Card"
                         onClicked: workspace.sendRender()
                     }
 
