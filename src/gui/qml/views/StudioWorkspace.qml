@@ -7,14 +7,105 @@ Item {
     id: workspace
 
     // The Studio workflow intentionally remains separate from the legacy Render button.
-    property url manualArtworkUrl: ""
     property url previewCardUrl: ""
+    property var dualPreviewUrls: ["", ""]
+
+    // One independent draft per face; switching the editor/preview never
+    // modifies the other face or makes a finished preview stale.
+    property var faceDrafts: []
+    property int activeFaceIndex: 0
+    property bool loadingFaceFields: false
+    readonly property bool isDualFace: studioCardModel.card.layout_kind === "transform"
+        || studioCardModel.card.layout_kind === "mdfc"
+    readonly property bool renderBusy: studioRenderModel.busy || studioDualRenderModel.busy
+    readonly property var activeFaceDraft: faceDrafts.length > activeFaceIndex
+        ? faceDrafts[activeFaceIndex] : ({})
+    readonly property string manualArtworkUrl: activeFaceDraft.manual_artwork || ""
+
+    function captureCurrentFace() {
+        if (loadingFaceFields || faceDrafts.length <= activeFaceIndex)
+            return;
+        const drafts = faceDrafts.slice();
+        const existing = drafts[activeFaceIndex];
+        drafts[activeFaceIndex] = Object.assign({}, existing, {
+            name: cardName.text,
+            mana_cost: manaCost.text,
+            type_line: typeLine.text,
+            oracle_text: rulesText.text,
+            flavor_text: flavorText.text,
+            include_flavor_text: includeFlavorText ? "true" : "false",
+            power: power.text,
+            toughness: toughness.text,
+            artist: artist.text,
+            set: setCode.text,
+            rarity: rarity.text
+        });
+        faceDrafts = drafts;
+    }
+
+    function selectFace(index) {
+        if (index < 0 || index >= faceDrafts.length || renderBusy)
+            return;
+        captureCurrentFace();
+        activeFaceIndex = index;
+        loadingFaceFields = true;
+        const face = faceDrafts[index];
+        cardName.text = face.name || "";
+        manaCost.text = face.mana_cost || "";
+        typeLine.text = face.type_line || "";
+        rulesText.text = face.oracle_text || "";
+        flavorText.text = face.flavor_text || "";
+        power.text = face.power || "";
+        toughness.text = face.toughness || "";
+        artist.text = face.artist || "";
+        setCode.text = face.set || "";
+        rarity.text = face.rarity || "";
+        includeFlavorText = face.include_flavor_text !== "false";
+        loadingFaceFields = false;
+    }
+
+    function setActiveArtwork(url) {
+        if (renderBusy || faceDrafts.length <= activeFaceIndex)
+            return;
+        const drafts = faceDrafts.slice();
+        drafts[activeFaceIndex] = Object.assign({}, drafts[activeFaceIndex], {
+            manual_artwork: url.toString()
+        });
+        faceDrafts = drafts;
+    }
+
+    function initializeFaces() {
+        loadingFaceFields = true;
+        activeFaceIndex = 0;
+        const card = studioCardModel.card;
+        faceDrafts = (card.faces || []).map(function(f) {
+            return Object.assign({}, f);
+        });
+        // Don't display a previous card's render as though it belonged to this lookup.
+        previewCardUrl = "";
+        dualPreviewUrls = ["", ""];
+        lastRenderedSignature = "";
+        lastPsdSignature = "";
+        pendingRenderSignature = "";
+        // A newly looked-up card has no matching exports for either face.
+        lastRenderedFaceSignatures = ["", ""];
+        lastPsdFaceSignatures = ["", ""];
+        pendingFaceRenderSignatures = ["", ""];
+        if (faceDrafts.length > 0)
+            selectFace(0);  // loadingFaceFields prevents overwriting newly loaded data.
+        loadingFaceFields = false;
+    }
 
     // Save the exact form state submitted for the latest Studio render.
     // These are local UI snapshots, not an attempt to inspect the exported JPG.
     property string pendingRenderSignature: ""
     property string lastRenderedSignature: ""
     property string lastPsdSignature: ""
+    // Two-sided previews must be tracked independently: editing one side
+    // cannot invalidate the unchanged side's already-rendered preview.
+    property var pendingFaceRenderSignatures: ["", ""]
+    property var lastRenderedFaceSignatures: ["", ""]
+    property var lastPsdFaceSignatures: ["", ""]
 
     // Template Options V1: keep Borderless selections during this Studio session.
     property string borderlessTextboxSize: "Automatic"
@@ -42,45 +133,79 @@ Item {
     Component.onCompleted: loadBorderlessOptionsOnce()
 
     readonly property string currentEditorSignature: JSON.stringify([
-        studioCardModel.card.art_crop || "",
         studioCardModel.card.name || "",
-        studioCardModel.card.set || "",
-        cardName.text, manaCost.text, typeLine.text,
-        rulesText.text, flavorText.text,
-        includeFlavorText, saveEditablePsd,
-        power.text, toughness.text, artist.text,
-        setCode.text, rarity.text,
-        effectiveArtworkUrl.toString(),
+        studioCardModel.card.layout_kind || "",
+        faceDrafts,
+        saveEditablePsd,
         selectedTemplateName,
         selectedTemplateIndex >= 0
             ? (templateListModel.get_data(selectedTemplateIndex, "plugin_id") || "")
             : "",
-        // Options only matter for the Borderless template; other previews
-        // are unaffected when these hidden values change.
         showBorderlessOptions ? borderlessTextboxSize : "",
         showBorderlessOptions ? borderlessTextless : false,
         showBorderlessOptions ? borderlessDropShadow : false
     ])
 
+    // This signature contains only the selected face's editable data plus
+    // settings shared by both faces. Template changes still stale BOTH sides.
+    function faceRenderSignature(index, drafts) {
+        const face = drafts[index] || {};
+        return JSON.stringify([
+            studioCardModel.card.name || "",
+            studioCardModel.card.layout_kind || "",
+            face,
+            saveEditablePsd,
+            selectedTemplateName,
+            selectedTemplateIndex >= 0
+                ? (templateListModel.get_data(selectedTemplateIndex, "plugin_id") || "")
+                : "",
+            showBorderlessOptions ? borderlessTextboxSize : "",
+            showBorderlessOptions ? borderlessTextless : false,
+            showBorderlessOptions ? borderlessDropShadow : false
+        ]);
+    }
+    readonly property string currentFaceSignature: isDualFace
+        ? faceRenderSignature(activeFaceIndex, faceDrafts) : currentEditorSignature
+    readonly property string frontRenderedUrl: dualPreviewUrls.length > 0 ? dualPreviewUrls[0] : ""
+    readonly property string backRenderedUrl: dualPreviewUrls.length > 1 ? dualPreviewUrls[1] : ""
+    readonly property string displayedPreviewUrl: isDualFace
+        ? (activeFaceIndex === 0 ? frontRenderedUrl : backRenderedUrl)
+        : previewCardUrl.toString()
+    readonly property string activePhase: isDualFace ? studioDualRenderModel.phase : studioRenderModel.phase
+    readonly property string activeStatus: isDualFace ? studioDualRenderModel.status : studioRenderModel.status
+    readonly property string activeLaunchWarning: isDualFace
+        ? studioDualRenderModel.launch_warning : studioRenderModel.launch_warning
+    readonly property string activeLastOutput: isDualFace
+        ? studioDualRenderModel.last_output_url : studioRenderModel.last_output_url
+
     // The queue reports whether this specific preview came from Studio.
     // Compare that provenance and the submitted form snapshot instead of
     // comparing URL strings (which Qt may normalize differently).
-    readonly property bool currentPsdSaved:
-        lastPsdSignature.length > 0
-        && lastPsdSignature === currentEditorSignature
-        && studioRenderModel.last_output_url.toLowerCase().endsWith(".psd")
-        && renderedCardImage.status === Image.Null
+    readonly property bool currentPsdSaved: isDualFace
+        ? lastPsdFaceSignatures.length > activeFaceIndex
+            && lastPsdFaceSignatures[activeFaceIndex].length > 0
+            && lastPsdFaceSignatures[activeFaceIndex] === currentFaceSignature
+            && (activeFaceIndex === 0
+                ? studioDualRenderModel.front_output_url
+                : studioDualRenderModel.back_output_url).toLowerCase().endsWith(".psd")
+        : lastPsdSignature.length > 0
+            && lastPsdSignature === currentEditorSignature
+            && activeLastOutput.toLowerCase().endsWith(".psd")
 
-    readonly property bool previewIsCurrent:
-        renderedCardImage.status === Image.Ready
-        && lastRenderedSignature.length > 0
-        && lastRenderedSignature === currentEditorSignature
-        && studioRenderPreviewModel.preview_is_studio
+    readonly property bool previewIsCurrent: isDualFace
+        ? lastRenderedFaceSignatures.length > activeFaceIndex
+            && lastRenderedFaceSignatures[activeFaceIndex].length > 0
+            && lastRenderedFaceSignatures[activeFaceIndex] === currentFaceSignature
+            && displayedPreviewUrl.length > 0
+        : lastRenderedSignature.length > 0
+            && lastRenderedSignature === currentEditorSignature
+            && renderedCardImage.status === Image.Ready
+            && studioRenderPreviewModel.preview_is_studio
 
     readonly property string previewBadgeText:
-        studioRenderModel.busy ? "RENDERING"
+        renderBusy ? "RENDERING"
         : currentPsdSaved ? "PSD EXPORTED"
-        : renderedCardImage.status !== Image.Ready ? "NO PREVIEW"
+        : displayedPreviewUrl.length === 0 ? "NO PREVIEW"
         : previewIsCurrent ? "CURRENT PREVIEW" : "NEEDS RENDER"
 
     readonly property string previewBadgeBackground:
@@ -93,8 +218,8 @@ Item {
         : previewBadgeText === "NEEDS RENDER" ? "#dec8a2"
         : previewBadgeText === "RENDERING" ? "#b7cdd9" : "#aab3bb"
 
-    readonly property string scryfallArtworkUrl: studioCardModel.card.art_crop || ""
-    readonly property bool hasCustomArtwork: manualArtworkUrl.toString().length > 0
+    readonly property string scryfallArtworkUrl: activeFaceDraft.art_crop || ""
+    readonly property bool hasCustomArtwork: manualArtworkUrl.length > 0
     readonly property url effectiveArtworkUrl: hasCustomArtwork
         ? manualArtworkUrl : scryfallArtworkUrl
 
@@ -108,40 +233,54 @@ Item {
         ? (templateListModel.get_data(selectedTemplateIndex, "img") || "") : ""
 
     // These are readiness checks, not guesses about render progress.
+    readonly property bool selectedTemplateSupportsCard: !isDualFace
+        || studioDualRenderModel.supports_layout(selectedTemplateIndex, studioCardModel.card.layout_kind || "")
     readonly property string missingRequirement: {
         if (studioCardModel.loading) return "Looking up card details...";
         if (!studioCardModel.card.name) return "Find a card to get started.";
-        if (studioCardModel.card.studio_compatible === "no") return "Use the original Render button for this special layout.";
-        if (cardName.text.trim().length === 0) return "Enter a card name.";
-        if (typeLine.text.trim().length === 0) return "Enter a type line.";
-        if (effectiveArtworkUrl.toString().length === 0) return "Choose artwork for this card.";
+        if (studioCardModel.card.studio_compatible === "no")
+            return "Use the original Render button for this special layout.";
+        if (faceDrafts.length !== (isDualFace ? 2 : 1))
+            return "Loading card faces...";
+        for (let i = 0; i < faceDrafts.length; i++) {
+            const face = faceDrafts[i];
+            const side = isDualFace ? (i === 0 ? "front" : "back") + " face" : "card";
+            if (!(face.name || "").trim()) return "Enter a name for the " + side + ".";
+            if (!(face.type_line || "").trim()) return "Enter a type line for the " + side + ".";
+            if (!(face.manual_artwork || face.art_crop || "").length)
+                return "Choose artwork for the " + side + ".";
+        }
+        if (isDualFace && faceDrafts[0].name.trim().toLowerCase() === faceDrafts[1].name.trim().toLowerCase())
+            return "The two faces need different names.";
         if (!selectedTemplateInstalled) return "Select an installed template.";
+        if (!selectedTemplateSupportsCard)
+            return "Choose a template that supports both faces.";
         return "";
     }
-    readonly property bool canRender: !studioRenderModel.busy && missingRequirement.length === 0
+    readonly property bool canRender: !renderBusy && missingRequirement.length === 0
 
     // UI-only status tones: an entire subtle panel replaces icon-based status.
     // Readiness takes priority over an older completed render, so missing
     // information is never presented as ready merely because a past job finished.
     readonly property string renderStatusTone:
-        studioRenderModel.phase === "error" ? "error"
-        : studioRenderModel.busy ? "working"
+        activePhase === "error" ? "error"
+        : renderBusy ? "working"
         : missingRequirement.length > 0 ? "attention"
         : "success"
 
     // Keep the indicator succinct. Detailed readiness checks still govern
     // whether Render Card is enabled; only their visual presentation changes.
     readonly property string renderStatusTitle:
-        studioRenderModel.phase === "error" ? "Render failed"
-        : studioRenderModel.busy
-            ? (studioRenderModel.status || "Rendering in PhotoCraft...")
+        activePhase === "error" ? "Render failed"
+        : renderBusy
+            ? (activeStatus || "Rendering in PhotoCraft...")
         : missingRequirement.length > 0 ? "Not ready to render"
-        : studioRenderModel.phase === "complete" && currentPsdSaved
-            ? (studioRenderModel.launch_warning.length > 0
+        : activePhase === "complete" && currentPsdSaved
+            ? (activeLaunchWarning.length > 0
                 ? "PSD saved · open manually"
-                : studioRenderModel.status === "Opened in PhotoCraft"
+                : activeStatus.indexOf("PhotoCraft") >= 0
                     ? "Opened in PhotoCraft" : "PSD saved")
-        : studioRenderModel.phase === "complete" && previewIsCurrent ? "Render complete"
+        : activePhase === "complete" && previewIsCurrent ? "Render complete"
         : "Ready to render"
 
     readonly property color accent: "#44bf7e"
@@ -149,28 +288,31 @@ Item {
     readonly property color stroke: "#373e43"
 
     function sendRender() {
-        if (!canRender)
-            return;
-        // Capture BEFORE handing off to the asynchronous PhotoCraft queue.
-        pendingRenderSignature = currentEditorSignature;
-        studioRenderModel.render_card({
-            name: cardName.text,
-            mana_cost: manaCost.text,
-            type_line: typeLine.text,
-            oracle_text: rulesText.text,
-            flavor_text: flavorText.text,
-            include_flavor_text: includeFlavorText ? "true" : "false",
+        if (!canRender) return;
+        captureCurrentFace();
+        if (isDualFace) {
+            // Snapshot BOTH faces at submission, not at completion. Later
+            // edits must not be incorrectly marked as already rendered.
+            pendingFaceRenderSignatures = [
+                faceRenderSignature(0, faceDrafts),
+                faceRenderSignature(1, faceDrafts)
+            ];
+            pendingRenderSignature = "";
+        } else {
+            pendingRenderSignature = currentEditorSignature;
+            pendingFaceRenderSignatures = ["", ""];
+        }
+        const shared = {
             editable_psd: saveEditablePsd ? "true" : "false",
-            power: power.text,
-            toughness: toughness.text,
-            artist: artist.text,
-            set: setCode.text,
-            rarity: rarity.text,
-            manual_artwork: hasCustomArtwork ? manualArtworkUrl.toString() : "",
             template_textbox_size: borderlessTextboxSize,
             template_textless: borderlessTextless ? "true" : "false",
             template_drop_shadow: borderlessDropShadow ? "true" : "false"
-        });
+        };
+        if (isDualFace) {
+            studioDualRenderModel.render_card(Object.assign({}, shared, {faces: faceDrafts}));
+        } else {
+            studioRenderModel.render_card(Object.assign({}, shared, faceDrafts[0]));
+        }
     }
 
     // Small reusable controls keep styling consistent across the editor.
@@ -267,14 +409,14 @@ Item {
         title: "Choose card artwork"
         fileMode: FileDialog.OpenFile
         nameFilters: ["Images (*.png *.jpg *.jpeg *.webp)", "All files (*)"]
-        onAccepted: workspace.manualArtworkUrl = selectedFile
+        onAccepted: workspace.setActiveArtwork(selectedFile)
     }
     Connections {
         target: studioCardModel
         function onChanged() {
             if (studioCardModel.loading) {
-                // Avoid showing details from a different card during a new lookup.
-                workspace.manualArtworkUrl = "";
+                workspace.loadingFaceFields = true;
+                workspace.faceDrafts = [];
                 cardName.text = "";
                 manaCost.text = "";
                 typeLine.text = "";
@@ -285,21 +427,11 @@ Item {
                 artist.text = "";
                 setCode.text = "";
                 rarity.text = "";
+                workspace.loadingFaceFields = false;
                 return;
             }
-            if (!studioCardModel.card.name)
-                return;
-            const card = studioCardModel.card;
-            cardName.text = card.name || "";
-            manaCost.text = card.mana_cost || "";
-            typeLine.text = card.type_line || "";
-            rulesText.text = card.oracle_text || "";
-            flavorText.text = card.flavor_text || "";
-            power.text = card.power || "";
-            toughness.text = card.toughness || "";
-            artist.text = card.artist || "";
-            setCode.text = card.set || "";
-            rarity.text = card.rarity || "";
+            if (studioCardModel.card.name)
+                workspace.initializeFaces();
         }
     }
 
@@ -307,7 +439,7 @@ Item {
         target: studioRenderPreviewModel
         function onChanged() {
             const image = studioRenderPreviewModel.preview_url;
-            if (!image) return;
+            if (!image || workspace.isDualFace) return;
             // Force Qt to reload exports that reuse the same filename.
             workspace.previewCardUrl = "";
             Qt.callLater(function() { workspace.previewCardUrl = image; });
@@ -331,6 +463,31 @@ Item {
                 workspace.pendingRenderSignature = "";
             } else if (studioRenderModel.phase === "error") {
                 workspace.pendingRenderSignature = "";
+            }
+        }
+    }
+
+    Connections {
+        target: studioDualRenderModel
+        function onChanged() {
+            if (studioDualRenderModel.phase === "complete" && workspace.isDualFace
+                    && workspace.pendingFaceRenderSignatures.length === 2
+                    && workspace.pendingFaceRenderSignatures[0].length > 0) {
+                const front = studioDualRenderModel.front_output_url;
+                const back = studioDualRenderModel.back_output_url;
+                if (front.toLowerCase().endsWith(".psd") && back.toLowerCase().endsWith(".psd")) {
+                    workspace.lastPsdFaceSignatures = workspace.pendingFaceRenderSignatures.slice();
+                    workspace.lastRenderedFaceSignatures = ["", ""];
+                    workspace.dualPreviewUrls = ["", ""];
+                } else if (front.length > 0 && back.length > 0) {
+                    workspace.lastRenderedFaceSignatures = workspace.pendingFaceRenderSignatures.slice();
+                    workspace.lastPsdFaceSignatures = ["", ""];
+                    workspace.dualPreviewUrls = ["", ""];
+                    Qt.callLater(function() { workspace.dualPreviewUrls = [front, back]; });
+                }
+                workspace.pendingFaceRenderSignatures = ["", ""];
+            } else if (studioDualRenderModel.phase === "error") {
+                workspace.pendingFaceRenderSignatures = ["", ""];
             }
         }
     }
@@ -378,16 +535,71 @@ Item {
                         StudioField {
                             id: cardSearchField
                             Layout.fillWidth: true
-                            enabled: !studioCardModel.loading && !studioRenderModel.busy
+                            enabled: !studioCardModel.loading && !workspace.renderBusy
                             placeholderText: "Search Scryfall..."
                             onAccepted: studioCardModel.lookup(text)
                         }
                         StudioButton {
                             text: studioCardModel.loading ? "Finding..." : "Find"
-                            enabled: !studioCardModel.loading && !studioRenderModel.busy
+                            enabled: !studioCardModel.loading && !workspace.renderBusy
                                 && cardSearchField.text.trim().length > 0
                             onClicked: studioCardModel.lookup(cardSearchField.text)
                         }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: workspace.isDualFace
+                        spacing: 7
+                        Text {
+                            text: studioCardModel.card.layout_kind === "mdfc" ? "MODAL DFC" : "TRANSFORM"
+                            color: "#9da5ae"
+                            font.pixelSize: 10
+                            font.bold: true
+                            Layout.rightMargin: 5
+                        }
+                        Repeater {
+                            model: ["Front", "Back"]
+                            delegate: Button {
+                                id: faceEditorTab
+                                required property int index
+                                required property string modelData
+                                Layout.fillWidth: true
+                                implicitHeight: 32
+                                enabled: !workspace.renderBusy
+                                text: modelData
+                                hoverEnabled: enabled
+                                HoverHandler {
+                                    enabled: faceEditorTab.enabled
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                onClicked: workspace.selectFace(index)
+                                background: Rectangle {
+                                    radius: 6
+                                    color: workspace.activeFaceIndex === index ? "#2a473a"
+                                        : faceEditorTab.hovered ? "#343c40" : "#292e32"
+                                    border.color: workspace.activeFaceIndex === index ? "#4d9e76" : workspace.stroke
+                                    border.width: 1
+                                }
+                                contentItem: Text {
+                                    text: faceEditorTab.text
+                                    color: workspace.activeFaceIndex === index ? "#c6e8d4" : "#c8d0d5"
+                                    font.pixelSize: 12
+                                    font.bold: workspace.activeFaceIndex === index
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: workspace.isDualFace
+                        text: "Each face has its own text and artwork. Both render together."
+                        color: workspace.muted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                        Layout.bottomMargin: 2
                     }
 
                     RowLayout {
@@ -421,30 +633,34 @@ Item {
                     Text { text: "Name"; color: cardName.text.trim().length > 0 ? "#80c7a1" : "#d68b87"; font.pixelSize: 12 }
                     StudioField {
                         id: cardName
+                        onTextChanged: workspace.captureCurrentFace()
                         Layout.fillWidth: true
-                        enabled: !studioRenderModel.busy
+                        enabled: !workspace.renderBusy
                         placeholderText: "Card name"
                     }
                     Text { text: "Mana cost"; color: "#c4cbd0"; font.pixelSize: 12 }
                     StudioField {
                         id: manaCost
+                        onTextChanged: workspace.captureCurrentFace()
                         Layout.fillWidth: true
-                        enabled: !studioRenderModel.busy
+                        enabled: !workspace.renderBusy
                         placeholderText: "{G}, {2}{U}, etc."
                     }
                     Text { text: "Type line"; color: typeLine.text.trim().length > 0 ? "#80c7a1" : "#d68b87"; font.pixelSize: 12 }
                     StudioField {
                         id: typeLine
+                        onTextChanged: workspace.captureCurrentFace()
                         Layout.fillWidth: true
-                        enabled: !studioRenderModel.busy
+                        enabled: !workspace.renderBusy
                         placeholderText: "Creature — Elf Druid"
                     }
                     Text { text: "Rules text"; color: "#c4cbd0"; font.pixelSize: 12 }
                     StudioArea {
                         id: rulesText
+                        onTextChanged: workspace.captureCurrentFace()
                         Layout.fillWidth: true
                         minimumEditorHeight: 104
-                        enabled: !studioRenderModel.busy
+                        enabled: !workspace.renderBusy
                         placeholderText: "Card abilities..."
                     }
                     RowLayout {
@@ -460,9 +676,12 @@ Item {
                             id: includeFlavorSwitch
                             text: ""
                             implicitHeight: 23
-                            enabled: !studioRenderModel.busy
+                            enabled: !workspace.renderBusy
                             checked: workspace.includeFlavorText
-                            onToggled: workspace.includeFlavorText = checked
+                            onToggled: {
+                                workspace.includeFlavorText = checked;
+                                workspace.captureCurrentFace();
+                            }
                             HoverHandler {
                                 enabled: includeFlavorSwitch.enabled
                                 cursorShape: Qt.PointingHandCursor
@@ -488,10 +707,11 @@ Item {
                     }
                     StudioArea {
                         id: flavorText
+                        onTextChanged: workspace.captureCurrentFace()
                         Layout.fillWidth: true
                         minimumEditorHeight: 84
                         // Keep the Scryfall text editable even while exclusion is enabled.
-                        enabled: !studioRenderModel.busy
+                        enabled: !workspace.renderBusy
                         placeholderText: "Optional flavor text..."
                     }
                     Text { text: "Power / Toughness"; color: "#c4cbd0"; font.pixelSize: 12 }
@@ -500,23 +720,26 @@ Item {
                         spacing: 10
                         StudioField {
                             id: power
+                            onTextChanged: workspace.captureCurrentFace()
                             Layout.fillWidth: true
-                            enabled: !studioRenderModel.busy
+                            enabled: !workspace.renderBusy
                             placeholderText: "Power"
                         }
                         Text { text: "/"; color: workspace.muted; font.pixelSize: 18 }
                         StudioField {
                             id: toughness
+                            onTextChanged: workspace.captureCurrentFace()
                             Layout.fillWidth: true
-                            enabled: !studioRenderModel.busy
+                            enabled: !workspace.renderBusy
                             placeholderText: "Toughness"
                         }
                     }
                     Text { text: "Artist"; color: "#c4cbd0"; font.pixelSize: 12 }
                     StudioField {
                         id: artist
+                        onTextChanged: workspace.captureCurrentFace()
                         Layout.fillWidth: true
-                        enabled: !studioRenderModel.busy
+                        enabled: !workspace.renderBusy
                         placeholderText: "Artist credit"
                     }
                     Text { text: "Set / Rarity"; color: "#c4cbd0"; font.pixelSize: 12 }
@@ -525,14 +748,16 @@ Item {
                         spacing: 8
                         StudioField {
                             id: setCode
+                            onTextChanged: workspace.captureCurrentFace()
                             Layout.fillWidth: true
-                            enabled: !studioRenderModel.busy
+                            enabled: !workspace.renderBusy
                             placeholderText: "Set code"
                         }
                         StudioField {
                             id: rarity
+                            onTextChanged: workspace.captureCurrentFace()
                             Layout.fillWidth: true
-                            enabled: !studioRenderModel.busy
+                            enabled: !workspace.renderBusy
                             placeholderText: "common, rare..."
                         }
                     }
@@ -599,7 +824,7 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         text: workspace.hasCustomArtwork ? "Using your selected image"
-                            : "Scryfall artwork · " + (studioCardModel.card.artist || "Artist unknown")
+                            : "Scryfall artwork · " + (workspace.activeFaceDraft.artist || "Artist unknown")
                         visible: workspace.effectiveArtworkUrl.toString().length > 0
                         color: workspace.muted
                         font.pixelSize: 11
@@ -610,15 +835,15 @@ Item {
                         spacing: 8
                         StudioButton {
                             text: workspace.hasCustomArtwork ? "Replace artwork..." : "Choose artwork..."
-                            enabled: !studioRenderModel.busy && !studioCardModel.loading
+                            enabled: !workspace.renderBusy && !studioCardModel.loading
                             onClicked: artworkPicker.open()
                         }
                         StudioButton {
                             text: "Use Scryfall"
                             subtle: true
                             visible: workspace.hasCustomArtwork && workspace.scryfallArtworkUrl.length > 0
-                            enabled: !studioRenderModel.busy
-                            onClicked: workspace.manualArtworkUrl = ""
+                            enabled: !workspace.renderBusy
+                            onClicked: workspace.setActiveArtwork("")
                         }
                     }
                     Text {
@@ -715,6 +940,43 @@ Item {
                         }
                     }
 
+                    RowLayout {
+                        visible: workspace.isDualFace
+                        spacing: 4
+                        Repeater {
+                            model: ["Front", "Back"]
+                            delegate: Button {
+                                id: previewFaceTab
+                                required property int index
+                                required property string modelData
+                                text: modelData
+                                implicitWidth: 58
+                                implicitHeight: 30
+                                enabled: !workspace.renderBusy
+                                hoverEnabled: enabled
+                                HoverHandler {
+                                    enabled: previewFaceTab.enabled
+                                    cursorShape: Qt.PointingHandCursor
+                                }
+                                onClicked: workspace.selectFace(index)
+                                background: Rectangle {
+                                    radius: 5
+                                    color: workspace.activeFaceIndex === index ? "#2a473a"
+                                        : previewFaceTab.hovered ? "#353b3f" : "#292e32"
+                                    border.color: workspace.activeFaceIndex === index ? "#4d9e76" : workspace.stroke
+                                    border.width: 1
+                                }
+                                contentItem: Text {
+                                    text: previewFaceTab.text
+                                    font.pixelSize: 11
+                                    font.bold: workspace.activeFaceIndex === index
+                                    color: workspace.activeFaceIndex === index ? "#c6e8d4" : "#c8d0d5"
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+                        }
+                    }
                     Item { Layout.fillWidth: true }
 
                     Rectangle {
@@ -751,7 +1013,7 @@ Item {
                         id: renderedCardImage
                         anchors.fill: parent
                         anchors.margins: 15
-                        source: workspace.previewCardUrl
+                        source: workspace.displayedPreviewUrl
                         fillMode: Image.PreserveAspectFit
                         asynchronous: true
                         cache: false
@@ -772,7 +1034,7 @@ Item {
                             width: parent.width
                             text: renderedCardImage.status === Image.Error
                                 ? "Preview unavailable"
-                                : workspace.currentPsdSaved ? "Editable PSD saved"
+                                : workspace.currentPsdSaved ? (workspace.isDualFace ? "Both editable PSDs saved" : "Editable PSD saved")
                                 : "Your rendered card will appear here"
                             font.pixelSize: 17
                             font.bold: true
@@ -785,7 +1047,10 @@ Item {
                             text: renderedCardImage.status === Image.Error
                                 ? "Check the output folder for the exported file."
                                 : workspace.currentPsdSaved
-                                    ? "The layered PSD was saved. PhotoCraft opens automatically when available."
+                                    ? (workspace.isDualFace
+                                        ? "Both layered PSDs were saved. PhotoCraft opens them automatically when available."
+                                        : "The layered PSD was saved. PhotoCraft opens automatically when available.")
+                                    : workspace.isDualFace ? "Render both faces to preview either side."
                                     : "Click Render Card to create a preview."
                             font.pixelSize: 12
                             color: workspace.muted
@@ -819,7 +1084,7 @@ Item {
                     spacing: 11
                     Text { text: "Render Settings"; color: "#f5f6f7"; font.pixelSize: 20; font.bold: true }
                     Text {
-                        text: "Choose an installed frame for your card."
+                        text: workspace.isDualFace ? "Choose a frame supporting both faces." : "Choose an installed frame for your card."
                         color: workspace.muted
                         font.pixelSize: 12
                         Layout.fillWidth: true
@@ -834,7 +1099,7 @@ Item {
                             cursorShape: Qt.PointingHandCursor
                         }
                         Layout.fillWidth: true
-                        enabled: !studioRenderModel.busy
+                        enabled: !workspace.renderBusy
                         model: templateListModel
                         textRole: "name"
                         currentIndex: templateListModel.selected_index
@@ -880,6 +1145,15 @@ Item {
                             font.pixelSize: 12
                             Layout.fillWidth: true
                         }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: workspace.isDualFace && workspace.selectedTemplateInstalled
+                            && !workspace.selectedTemplateSupportsCard
+                        text: "This template does not support both card faces. Choose a double-faced template."
+                        color: "#d6c7a6"
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
                     }
                     Rectangle {
                         Layout.fillWidth: true
@@ -942,7 +1216,7 @@ Item {
                         ComboBox {
                             id: borderlessSizePicker
                             Layout.fillWidth: true
-                            enabled: !studioRenderModel.busy && !workspace.borderlessTextless
+                            enabled: !workspace.renderBusy && !workspace.borderlessTextless
                             model: ["Automatic", "Short", "Medium", "Normal", "Tall"]
                             currentIndex: model.indexOf(workspace.borderlessTextboxSize)
                             onActivated: function(index) {
@@ -990,7 +1264,7 @@ Item {
                             Switch {
                                 id: borderlessTextlessSwitch
                                 text: ""
-                                enabled: !studioRenderModel.busy
+                                enabled: !workspace.renderBusy
                                 checked: workspace.borderlessTextless
                                 onToggled: workspace.borderlessTextless = checked
                                 HoverHandler {
@@ -1028,7 +1302,7 @@ Item {
                             Switch {
                                 id: borderlessShadowSwitch
                                 text: ""
-                                enabled: !studioRenderModel.busy
+                                enabled: !workspace.renderBusy
                                 checked: workspace.borderlessDropShadow
                                 onToggled: workspace.borderlessDropShadow = checked
                                 HoverHandler {
@@ -1086,7 +1360,7 @@ Item {
                         Switch {
                             id: editablePsdSwitch
                             text: ""
-                            enabled: !studioRenderModel.busy
+                            enabled: !workspace.renderBusy
                             checked: workspace.saveEditablePsd
                             onToggled: workspace.saveEditablePsd = checked
                             HoverHandler {
@@ -1122,8 +1396,8 @@ Item {
                     }
                     Text {
                         Layout.fillWidth: true
-                        visible: studioRenderModel.launch_warning.length > 0
-                        text: studioRenderModel.launch_warning
+                        visible: workspace.activeLaunchWarning.length > 0
+                        text: workspace.activeLaunchWarning
                         color: "#d6c7a6"
                         font.pixelSize: 11
                         wrapMode: Text.WordWrap
@@ -1170,7 +1444,9 @@ Item {
                         Layout.fillWidth: true
                         primary: true
                         enabled: workspace.canRender
-                        text: studioRenderModel.busy ? "Working..." : workspace.saveEditablePsd ? "Render & Edit" : "Render Card"
+                        text: workspace.renderBusy ? "Working..."
+                            : workspace.isDualFace ? (workspace.saveEditablePsd ? "Render & Edit Both" : "Render Both Faces")
+                            : workspace.saveEditablePsd ? "Render & Edit" : "Render Card"
                         onClicked: workspace.sendRender()
                     }
 

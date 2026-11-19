@@ -1,21 +1,22 @@
-"""Scryfall card lookup for MTG Proxy Studio.
+"""Scryfall card lookup for Studio, including ordinary Transform and MDFC faces.
 
-Keeps the full, originally selected printing for subsequent Studio renders.
+Keep a deep-copyable, unmodified Scryfall printing for Studio's render actions.
 """
 from __future__ import annotations
 
 from threading import Thread
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from PySide6.QtCore import QObject, Property, Signal, Slot
 
 from src import CFG
 from src.cards import get_card_data
-from src.utils.scryfall import ScryfallCard
+from src.enums.mtg import LayoutScryfall
+from src.utils.scryfall import ScryfallCard, ScryfallCardFace
 
 
 class LookupResult(TypedDict):
-    card: dict[str, str]
+    card: dict[str, Any]
     error: str
     source: ScryfallCard | None
 
@@ -26,14 +27,14 @@ class StudioCardModel(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self._card: dict[str, str] = {}
+        self._card: dict[str, Any] = {}
         self._source: ScryfallCard | None = None
-        self._loading: bool = False
-        self._error: str = ""
+        self._loading = False
+        self._error = ""
         self._lookup_finished.connect(self._finish_lookup)
 
     @Property("QVariantMap", notify=changed)  # pyright: ignore[reportArgumentType]
-    def card(self) -> dict[str, str]:
+    def card(self) -> dict[str, Any]:
         return self._card
 
     @Property(bool, notify=changed)
@@ -45,8 +46,26 @@ class StudioCardModel(QObject):
         return self._error
 
     def copy_source(self) -> ScryfallCard | None:
-        """Return a detached copy of the printing selected in the editor."""
         return self._source.model_copy(deep=True) if self._source else None
+
+    @staticmethod
+    def _face_as_editor_data(face: ScryfallCard | ScryfallCardFace, source: ScryfallCard) -> dict[str, str]:
+        image_uris = face.image_uris
+        return {
+            "name": face.name,
+            "mana_cost": face.mana_cost or "",
+            "type_line": face.type_line or "",
+            "oracle_text": face.oracle_text or "",
+            "flavor_text": face.flavor_text or "",
+            "power": face.power or "",
+            "toughness": face.toughness or "",
+            "artist": face.artist or source.artist or "",
+            "set": source.set.upper(),
+            "rarity": str(source.rarity),
+            "art_crop": str(image_uris.art_crop) if image_uris else "",
+            "include_flavor_text": "true",
+            "manual_artwork": "",
+        }
 
     @Slot(str)
     def lookup(self, name: str) -> None:
@@ -66,25 +85,32 @@ class StudioCardModel(QObject):
                 if data is None:
                     raise ValueError("Card not found on Scryfall.")
 
-                art_crop = ""
-                if data.image_uris is not None:
-                    art_crop = str(data.image_uris.art_crop)
-                elif data.card_faces and data.card_faces[0].image_uris is not None:
-                    art_crop = str(data.card_faces[0].image_uris.art_crop)
-
-                card: dict[str, str] = {
-                    "name": data.name,
-                    "mana_cost": data.mana_cost or "",
-                    "type_line": data.type_line,
-                    "oracle_text": data.oracle_text or "",
-                    "flavor_text": data.flavor_text or "",
-                    "power": data.power or "",
-                    "toughness": data.toughness or "",
-                    "artist": data.artist or "",
-                    "set": data.set.upper(),
-                    "rarity": str(data.rarity),
-                    "studio_compatible": "yes" if str(data.layout) == "normal" and not data.card_faces else "no",
-                    "art_crop": art_crop,
+                normal = data.layout == LayoutScryfall.Normal and not data.card_faces
+                dual = (
+                    data.layout in {LayoutScryfall.Transform, LayoutScryfall.MDFC}
+                    and data.card_faces is not None
+                    and len(data.card_faces) == 2
+                    # The original renderer uses specialized layouts for these.
+                    and not any(
+                        any(term in (face.type_line or "") for term in ("Planeswalker", "Saga", "Battle"))
+                        for face in data.card_faces
+                    )
+                )
+                kind = (
+                    "normal" if normal else
+                    ("mdfc" if data.layout == LayoutScryfall.MDFC else "transform") if dual else
+                    "unsupported"
+                )
+                faces = (
+                    [self._face_as_editor_data(face, data) for face in data.card_faces]
+                    if dual and data.card_faces is not None
+                    else [self._face_as_editor_data(data, data)]
+                )
+                card: dict[str, Any] = {
+                    **faces[0],
+                    "layout_kind": kind,
+                    "studio_compatible": "yes" if normal or dual else "no",
+                    "faces": faces,
                 }
                 result: LookupResult = {"card": card, "error": "", "source": data}
             except Exception as exc:

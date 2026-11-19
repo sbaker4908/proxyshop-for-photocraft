@@ -1906,6 +1906,59 @@ class BorderlessVectorTemplate(
             psd.copy_layer_mask(layer_from=layer, layer_to=ref)
             psd.apply_mask(ref)
             ref.visible = False
+
+        # A modal DFC has a reverse-face information bar across the bottom of
+        # the text box. Its mask changes the visible reference shape, but a
+        # reference layer's rectangular bounds can still extend into the bar.
+        # FormattedTextArea uses those bounds to choose the font size, causing
+        # longer flavor text to overlap the bar (e.g. Bala Ged Recovery).
+        # Keep this adjustment limited to Borderless MDFC faces.
+        if self.is_mdfc and ref:
+            dims = ref.dims
+            top = float(dims["top"])
+            bottom = float(dims["bottom"])
+            bar_top = None
+
+            # Prefer the actual bar background, which is more accurate than
+            # measuring its text. The named color layer is the same one used
+            # when enabling the MDFC bar in MDFCMod.
+            bar = psd.getLayer(
+                self.mdfc_bar_color, [self.dfc_group, LAYERS.BOTTOM]
+            )
+            if bar:
+                candidate = float(bar.bounds[1])
+                if top < candidate < bottom:
+                    bar_top = candidate
+
+            # Some PhotoCraft versions report a vector layer's untrimmed
+            # bounds. Fall back to the text already positioned on the strip.
+            if bar_top is None:
+                labels = [
+                    layer for layer in (
+                        self.text_layer_mdfc_left,
+                        self.text_layer_mdfc_right,
+                    ) if layer
+                ]
+                candidates = [
+                    float(layer.bounds[1]) - self.app.scale_by_dpi(22)
+                    for layer in labels
+                ]
+                candidates = [n for n in candidates if top < n < bottom]
+                if candidates:
+                    bar_top = min(candidates)
+
+            if bar_top is not None:
+                # A little breathing room above the bar, in document pixels.
+                safe_bottom = int(bar_top - self.app.scale_by_dpi(22))
+                # Never collapse the text area if a template's layer bounds
+                # are unexpected; retain the original bounds in that case.
+                if top + self.app.scale_by_dpi(80) < safe_bottom < bottom:
+                    ref.dims = {
+                        **dims,
+                        "bottom": safe_bottom,
+                        "height": safe_bottom - int(top),
+                        "center_y": round((top + safe_bottom) / 2),
+                    }
         return ref
 
     """
