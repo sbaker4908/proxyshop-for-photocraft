@@ -3,6 +3,7 @@
 """
 
 from pathlib import Path
+import sys
 
 from PySide6.QtGui import QIcon
 
@@ -17,7 +18,7 @@ def launch_gui(
     """Launch the app in GUI mode."""
 
     from PySide6 import QtAsyncio
-    from PySide6.QtGui import QGuiApplication
+    from PySide6.QtGui import QGuiApplication, QWindow
     from PySide6.QtQml import QQmlApplicationEngine
     from PySide6.QtQuickControls2 import QQuickStyle
 
@@ -44,8 +45,16 @@ def launch_gui(
     from src.gui.qml.models.trim_model import TrimModel
     from src.render.render_queue import RenderQueue
 
+    # Tell Windows this is ProxyStudio, not another python.exe taskbar window.
+    # Set the identity BEFORE creating the first GUI window.
+    if sys.platform == "win32":
+        from ctypes import windll
+        windll.shell32.SetCurrentProcessExplicitAppUserModelID("ProxyStudio.Desktop")
+
     app = QGuiApplication(applicationDisplayName="MTG Proxy Studio")
-    app.setWindowIcon(QIcon("src/img/favicon.ico"))
+    # Resolve against this file so launching outside the repo root also works.
+    app_icon = QIcon(str(Path(__file__).resolve().parent / "src" / "img" / "favicon.ico"))
+    app.setWindowIcon(app_icon)
     engine = QQmlApplicationEngine()
 
     file_path_model = FilePathModel()
@@ -143,6 +152,11 @@ def launch_gui(
     QQuickStyle.setStyle("Fusion")
     QQuickStyle.setFallbackStyle("Basic")
     engine.loadFromModule("qml", "App")
+    # QML ApplicationWindow is a QWindow: set its icon explicitly too.
+    # This is the window Windows uses for the taskbar button.
+    for root_window in engine.rootObjects():
+        if isinstance(root_window, QWindow):
+            root_window.setIcon(app_icon)
 
     # Ensure that the root context is available at QML destruction
     app.aboutToQuit.connect(engine.deleteLater)
