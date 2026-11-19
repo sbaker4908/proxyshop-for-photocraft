@@ -15,10 +15,8 @@ from types import ModuleType
 from typing import Annotated, Any, Literal, NotRequired, Protocol, TypedDict
 
 import yarl
-from omnitils.api.gdrive import gdrive_download_file
 from omnitils.modules import get_local_module, import_module_from_path, import_package
 from omnitils.strings import normalize_ver
-from py7zr import SevenZipFile
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -42,11 +40,11 @@ from src.enums.mtg import (
 )
 from src.utils.data_structures import dump_model, parse_model
 from src.utils.download import (
-    download_cloudfront,
     get_gdrive_metadata,
     list_gdrive_folder,
 )
 from src.utils.event import SubscribableEvent
+from src.utils.template_download import download_template_file
 
 _logger = getLogger(__name__)
 
@@ -952,34 +950,43 @@ class AppTemplate:
     """
 
     def check_for_update(self) -> bool:
-        """Check if a template is up-to-date based on the live file metadata.
+        """Find an update without requiring Google metadata for missing files.
 
-        Returns:
-            True if Template needs to be updated, otherwise False.
+        Metadata might be blocked by Drive or an unavailable API key even if
+        the public link works in a browser. Keep missing files downloadable
+        with the known manifest file ID and report updates to installed files
+        only when newer metadata can actually be verified.
         """
-        if not self.google_drive_id:
-            print(f"{self.name} ({self.file_name}) does not have a Google Drive ID")
+        file_id = self.google_drive_id
+        if not file_id and not self.env.API_AMAZON:
+            self._update = {}
             return False
 
-        # Get our metadata
-        if not (data := get_gdrive_metadata(self.google_drive_id, self.env.API_GOOGLE)):
-            print(f"{self.name} ({self.file_name}) not found on Google Drive")
+        data = get_gdrive_metadata(file_id, self.env.API_GOOGLE) if file_id else None
+        if not data:
+            if not self.is_installed:
+                self._update = {
+                    "version": "unverified",
+                    "name": self.file_name,
+                    "size": 0,
+                }
+                return True
+            # Do not advertise an unverified update to an installed template.
+            self._update = {}
             return False
 
-        # Cache update data. The Drive description can hold a semantic version;
-        # when it is empty (or not a version), fall back to the file's
-        # modification time so re-uploading a template publishes a new version.
+        # Never let remote filenames traverse outside the templates folder.
+        remote_name = str(data.get("name") or self.file_name)
+        if (
+            Path(remote_name).name != remote_name
+            or remote_name.lower().rsplit(".", 1)[-1] not in {"psd", "psb", "7z"}
+        ):
+            remote_name = self.file_name
         self._update = {
-            "version": (
-                data.get("description")
-                or data.get("modifiedTime")
-                or "v1.0.0"
-            ),
-            "name": data.get("name", self.file_name),
-            "size": data["size"],
+            "version": str(data.get("description") or data.get("modifiedTime") or "1.0.0"),
+            "name": remote_name,
+            "size": int(data.get("size") or 0),
         }
-
-        # Compare the versions
         self._validate_version()
         if not self.version:
             return True
@@ -1004,67 +1011,34 @@ class AppTemplate:
     def update_template(
         self, callback: Callable[[int, int], None] | None = None
     ) -> bool:
-        """Update a given template to the latest version.
+        """Download a verified template, with independently retried sources.
 
-        Args:
-            callback: Callback method to update progress bar.
-
-        Returns:
-            True if succeeded, False if failed.
+        Any Drive error is handled inside the download helper so an optional
+        CloudFront fallback can still run. Version state and installed events
+        are only changed *after* a valid PSD/PSB reaches the templates folder.
         """
+        was_installed = self.is_installed
+        try:
+            result = download_template_file(
+                file_id=self.google_drive_id,
+                api_key=self.env.API_GOOGLE,
+                download_path=self.path_download or self.path_psd,
+                expected_psd=self.path_psd,
+                fallback_url=self.url_amazon,
+                callback=callback,
+            )
+            if not result or not self.is_installed:
+                _logger.error("Failed to update template: %s (%s)", self.name, self.file_name)
+                return False
 
-        def get_fail_message() -> str:
-            """Message logged when a template update fails."""
-            return f"Failed to update template: {self.name}"
-
-        if self.path_download:
-            try:
-                result: bool = False
-                will_install = not self.is_installed
-
-                if self.google_drive_id and self.url_google_drive:
-                    # Download using Google Drive
-                    result = bool(
-                        gdrive_download_file(
-                            url=self.url_google_drive,
-                            path=self.path_download,
-                            path_cookies=PATH.LOGS_COOKIES,
-                            callback=callback,
-                            headers={**DEFAULT_HEADERS},
-                        )
-                    )
-
-                    # If downloaded file is a 7z archive, extract the template from it
-                    if result and self.path_download.suffix == ".7z":
-                        with SevenZipFile(self.path_7z, "r") as archive:
-                            archive.extractall(self.path_templates)
-                        self.path_7z.unlink(missing_ok=True)
-
-                if self.url_amazon and not result:
-                    # Google Drive failed or isn't an option, download from Amazon S3
-                    result = download_cloudfront(
-                        url=self.url_amazon,
-                        path=self.path_download,
-                        callback=callback,
-                    )
-
-                if self.google_drive_id and self.update_version:
-                    self.versions[self.google_drive_id] = self.update_version
-
-                if will_install:
-                    self.template_installed.trigger(None)
-
-                if not result:
-                    _logger.error(get_fail_message())
-
-                return result
-
-            # Exception caught while downloading / unpacking
-            except Exception:
-                _logger.exception(get_fail_message())
-        else:
-            _logger.error("Template update failed. Download path isn't specified.")
-        return False
+            if self.google_drive_id and self.update_version:
+                self.versions[self.google_drive_id] = self.update_version
+            if not was_installed:
+                self.template_installed.trigger(None)
+            return True
+        except Exception:
+            _logger.exception("Failed to update template: %s (%s)", self.name, self.file_name)
+            return False
 
     """
     * Pathing Utils

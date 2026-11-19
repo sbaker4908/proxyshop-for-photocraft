@@ -15,7 +15,11 @@ import qml.views
 ApplicationWindow {
     id: appWindow
 
-    property QtObject currentRenderingModel: viewTabBar.currentIndex === 1 ? batchRenderModel : templateListModel
+    // ProxyStudio navigation: Studio / Trim primary; legacy tools in menu.
+    property int currentModeIndex: 2  // Always open Studio first.
+    property bool pluginUpdateAvailable: false
+    property bool templateUpdateAvailable: false
+    property QtObject currentRenderingModel: currentModeIndex === 1 ? batchRenderModel : templateListModel
 
     title: "MTG Proxy Studio"
     width: 800
@@ -49,7 +53,6 @@ ApplicationWindow {
         property alias windowHeight: appWindow.height
         property alias windowX: appWindow.x
         property alias windowY: appWindow.y
-        property int currentRenderModeTab
         property var rootSplitState
         property var templateListSplitState
 
@@ -67,9 +70,6 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
-        if (settings.currentRenderModeTab)
-            viewTabBar.setCurrentIndex(settings.currentRenderModeTab);
-
         rootSplit.restoreState(settings.rootSplitState);
         templateListSplit.restoreState(settings.templateListSplitState);
 
@@ -79,8 +79,6 @@ ApplicationWindow {
             batchRenderModel.restore_template_selections(settings.batchModeTemplateSelections);
     }
     Component.onDestruction: {
-        settings.currentRenderModeTab = viewTabBar.currentIndex;
-
         settings.rootSplitState = rootSplit.saveState();
         settings.templateListSplitState = templateListSplit.saveState();
 
@@ -122,6 +120,10 @@ ApplicationWindow {
 
     menuBar: MenuBar {
         id: menuBar
+        // ProxyStudio navigation: left-aligned Studio and Trim.
+        // Reserve space for both mode buttons and the separator; menu items
+        // then begin with File, Tools, Help. The usual menu order is unchanged.
+        leftPadding: 190
 
         background.implicitHeight: 0
         background.implicitWidth: 0
@@ -167,7 +169,36 @@ ApplicationWindow {
         }
         CustomMenu {
             systemPalette: appSystemPalette
-            title: "Tools"
+            title: appWindow.pluginUpdateAvailable || appWindow.templateUpdateAvailable ? "Tools •" : "Tools"
+
+            // Primary workflows live in the app bar; advanced workflows live here.
+            Action {
+                text: "Templates (legacy)"
+                onTriggered: appWindow.currentModeIndex = 0
+            }
+            Action {
+                text: "Batch mode (legacy)"
+                onTriggered: appWindow.currentModeIndex = 1
+            }
+            MenuSeparator {}
+            Action {
+                text: appWindow.pluginUpdateAvailable ? "Plugins  •  Update available" : "Plugins..."
+                onTriggered: {
+                    appWindow.pluginUpdateAvailable = false;
+                    if (pluginUpdaterLoader.active)
+                        pluginUpdaterLoader.item?.show();
+                    else
+                        pluginUpdaterLoader.active = true;
+                }
+            }
+            Action {
+                text: appWindow.templateUpdateAvailable ? "Template updater  •  Update available" : "Template updater..."
+                onTriggered: {
+                    appWindow.templateUpdateAvailable = false;
+                    appWindow.currentModeIndex = 4;
+                }
+            }
+            MenuSeparator {}
 
             Action {
                 text: "Transform images"
@@ -199,201 +230,201 @@ ApplicationWindow {
                     }
                 }
             }
-        }
-        CustomMenu {
-            systemPalette: appSystemPalette
-            title: "Tests"
-            implicitWidth: 270
-
-            Action {
-                text: "Test all"
-                onTriggered: testRendersModel.test_all("", false)
-            }
-            Action {
-                text: "Quick test all"
-                onTriggered: testRendersModel.test_all("", true)
-            }
-
-            CustomMenu {
-                id: testAllLayoutsSubMenu
-
-                systemPalette: appSystemPalette
-                title: "Test all with layout"
-
-                Instantiator {
-                    model: testRendersModel.layout_categories
-
-                    delegate: CustomMenuItem {
-                        required property int index
-                        required property string modelData
-
-                        systemPalette: appSystemPalette
-                        text: modelData
-                        onTriggered: testRendersModel.test_all(modelData, false)
-                    }
-
-                    onObjectAdded: (index, object) => testAllLayoutsSubMenu.insertItem(index, object)
-                    onObjectRemoved: (index, object) => testAllLayoutsSubMenu.removeItem(object)
-                }
-            }
-            CustomMenu {
-                id: quickTestAllLayoutsSubMenu
-
-                systemPalette: appSystemPalette
-                title: "Quick test all with layout"
-
-                Instantiator {
-                    model: testRendersModel.layout_categories
-
-                    delegate: CustomMenuItem {
-                        required property int index
-                        required property string modelData
-
-                        systemPalette: appSystemPalette
-                        text: modelData
-                        onTriggered: testRendersModel.test_all(modelData, true)
-                    }
-
-                    onObjectAdded: (index, object) => quickTestAllLayoutsSubMenu.insertItem(index, object)
-                    onObjectRemoved: (index, object) => quickTestAllLayoutsSubMenu.removeItem(object)
-                }
-            }
-            CustomMenu {
-                id: testAllWithSpecificTestCaseSubMenu
-
-                systemPalette: appSystemPalette
-                title: "Test all with test case"
-
-                Instantiator {
-                    model: testRendersModel.layout_categories
-
-                    delegate: CustomMenu {
-                        id: testAllWithSpecificLayoutTestCaseSubMenu
-
-                        required property int index
-                        required property string modelData
-
-                        systemPalette: appSystemPalette
-                        title: modelData
-
-                        Instantiator {
-                            model: testRendersModel.get_test_cases_for_layout(testAllWithSpecificLayoutTestCaseSubMenu.modelData)
-
-                            delegate: CustomMenuItem {
-                                required property int index
-                                required property string modelData
-
-                                systemPalette: appSystemPalette
-                                text: modelData
-                                onTriggered: testRendersModel.test_all(testAllWithSpecificLayoutTestCaseSubMenu.modelData, false, modelData)
-                            }
-
-                            onObjectAdded: (index, object) => testAllWithSpecificLayoutTestCaseSubMenu.insertItem(index, object)
-                            onObjectRemoved: (index, object) => testAllWithSpecificLayoutTestCaseSubMenu.removeItem(object)
-                        }
-                    }
-
-                    onObjectAdded: (index, object) => testAllWithSpecificTestCaseSubMenu.insertMenu(index, object)
-                    onObjectRemoved: (index, object) => testAllWithSpecificTestCaseSubMenu.removeMenu(object)
-                }
-            }
-
             MenuSeparator {}
-
-            Action {
-                text: "Test selected template(s)"
-                onTriggered: appWindow.currentRenderingModel.test_render("", false)
-            }
-            Action {
-                text: "Quick test selected template(s)"
-                onTriggered: appWindow.currentRenderingModel.test_render("", true)
-            }
-
             CustomMenu {
-                id: selectedTemplateLayoutsSubMenu
-
                 systemPalette: appSystemPalette
-                title: "Test selected template(s) with layout"
+                title: "Tests"
+                implicitWidth: 270
 
-                Instantiator {
-                    model: testRendersModel.layout_categories
-
-                    delegate: CustomMenuItem {
-                        required property int index
-                        required property string modelData
-
-                        systemPalette: appSystemPalette
-                        text: modelData
-                        onTriggered: appWindow.currentRenderingModel.test_render(modelData, false)
-                    }
-
-                    onObjectAdded: (index, object) => selectedTemplateLayoutsSubMenu.insertItem(index, object)
-                    onObjectRemoved: (index, object) => selectedTemplateLayoutsSubMenu.removeItem(object)
+                Action {
+                    text: "Test all"
+                    onTriggered: testRendersModel.test_all("", false)
                 }
-            }
-            CustomMenu {
-                id: selectedTemplateQuickLayoutsSubMenu
-
-                systemPalette: appSystemPalette
-                title: "Quick test selected template(s) with layout"
-
-                Instantiator {
-                    model: testRendersModel.layout_categories
-
-                    delegate: CustomMenuItem {
-                        required property int index
-                        required property string modelData
-
-                        systemPalette: appSystemPalette
-                        text: modelData
-                        onTriggered: appWindow.currentRenderingModel.test_render(modelData, true)
-                    }
-
-                    onObjectAdded: (index, object) => selectedTemplateQuickLayoutsSubMenu.insertItem(index, object)
-                    onObjectRemoved: (index, object) => selectedTemplateQuickLayoutsSubMenu.removeItem(object)
+                Action {
+                    text: "Quick test all"
+                    onTriggered: testRendersModel.test_all("", true)
                 }
-            }
-            CustomMenu {
-                id: selectedTemplateSpecificTestCaseSubMenu
 
-                systemPalette: appSystemPalette
-                title: "Test selected template(s) with test case"
+                CustomMenu {
+                    id: testAllLayoutsSubMenu
 
-                Instantiator {
-                    model: testRendersModel.layout_categories
+                    systemPalette: appSystemPalette
+                    title: "Test all with layout"
 
-                    delegate: CustomMenu {
-                        id: selectedTemplateSpecificLayoutTestCaseSubMenu
+                    Instantiator {
+                        model: testRendersModel.layout_categories
 
-                        required property int index
-                        required property string modelData
+                        delegate: CustomMenuItem {
+                            required property int index
+                            required property string modelData
 
-                        systemPalette: appSystemPalette
-                        title: modelData
-
-                        Instantiator {
-                            model: testRendersModel.get_test_cases_for_layout(selectedTemplateSpecificLayoutTestCaseSubMenu.modelData)
-
-                            delegate: CustomMenuItem {
-                                required property int index
-                                required property string modelData
-
-                                systemPalette: appSystemPalette
-                                text: modelData
-                                onTriggered: appWindow.currentRenderingModel.test_render(selectedTemplateSpecificLayoutTestCaseSubMenu.modelData, false, modelData)
-                            }
-
-                            onObjectAdded: (index, object) => selectedTemplateSpecificLayoutTestCaseSubMenu.insertItem(index, object)
-                            onObjectRemoved: (index, object) => selectedTemplateSpecificLayoutTestCaseSubMenu.removeItem(object)
+                            systemPalette: appSystemPalette
+                            text: modelData
+                            onTriggered: testRendersModel.test_all(modelData, false)
                         }
-                    }
 
-                    onObjectAdded: (index, object) => selectedTemplateSpecificTestCaseSubMenu.insertMenu(index, object)
-                    onObjectRemoved: (index, object) => selectedTemplateSpecificTestCaseSubMenu.removeMenu(object)
+                        onObjectAdded: (index, object) => testAllLayoutsSubMenu.insertItem(index, object)
+                        onObjectRemoved: (index, object) => testAllLayoutsSubMenu.removeItem(object)
+                    }
+                }
+                CustomMenu {
+                    id: quickTestAllLayoutsSubMenu
+
+                    systemPalette: appSystemPalette
+                    title: "Quick test all with layout"
+
+                    Instantiator {
+                        model: testRendersModel.layout_categories
+
+                        delegate: CustomMenuItem {
+                            required property int index
+                            required property string modelData
+
+                            systemPalette: appSystemPalette
+                            text: modelData
+                            onTriggered: testRendersModel.test_all(modelData, true)
+                        }
+
+                        onObjectAdded: (index, object) => quickTestAllLayoutsSubMenu.insertItem(index, object)
+                        onObjectRemoved: (index, object) => quickTestAllLayoutsSubMenu.removeItem(object)
+                    }
+                }
+                CustomMenu {
+                    id: testAllWithSpecificTestCaseSubMenu
+
+                    systemPalette: appSystemPalette
+                    title: "Test all with test case"
+
+                    Instantiator {
+                        model: testRendersModel.layout_categories
+
+                        delegate: CustomMenu {
+                            id: testAllWithSpecificLayoutTestCaseSubMenu
+
+                            required property int index
+                            required property string modelData
+
+                            systemPalette: appSystemPalette
+                            title: modelData
+
+                            Instantiator {
+                                model: testRendersModel.get_test_cases_for_layout(testAllWithSpecificLayoutTestCaseSubMenu.modelData)
+
+                                delegate: CustomMenuItem {
+                                    required property int index
+                                    required property string modelData
+
+                                    systemPalette: appSystemPalette
+                                    text: modelData
+                                    onTriggered: testRendersModel.test_all(testAllWithSpecificLayoutTestCaseSubMenu.modelData, false, modelData)
+                                }
+
+                                onObjectAdded: (index, object) => testAllWithSpecificLayoutTestCaseSubMenu.insertItem(index, object)
+                                onObjectRemoved: (index, object) => testAllWithSpecificLayoutTestCaseSubMenu.removeItem(object)
+                            }
+                        }
+
+                        onObjectAdded: (index, object) => testAllWithSpecificTestCaseSubMenu.insertMenu(index, object)
+                        onObjectRemoved: (index, object) => testAllWithSpecificTestCaseSubMenu.removeMenu(object)
+                    }
+                }
+
+                MenuSeparator {}
+
+                Action {
+                    text: "Test selected template(s)"
+                    onTriggered: appWindow.currentRenderingModel.test_render("", false)
+                }
+                Action {
+                    text: "Quick test selected template(s)"
+                    onTriggered: appWindow.currentRenderingModel.test_render("", true)
+                }
+
+                CustomMenu {
+                    id: selectedTemplateLayoutsSubMenu
+
+                    systemPalette: appSystemPalette
+                    title: "Test selected template(s) with layout"
+
+                    Instantiator {
+                        model: testRendersModel.layout_categories
+
+                        delegate: CustomMenuItem {
+                            required property int index
+                            required property string modelData
+
+                            systemPalette: appSystemPalette
+                            text: modelData
+                            onTriggered: appWindow.currentRenderingModel.test_render(modelData, false)
+                        }
+
+                        onObjectAdded: (index, object) => selectedTemplateLayoutsSubMenu.insertItem(index, object)
+                        onObjectRemoved: (index, object) => selectedTemplateLayoutsSubMenu.removeItem(object)
+                    }
+                }
+                CustomMenu {
+                    id: selectedTemplateQuickLayoutsSubMenu
+
+                    systemPalette: appSystemPalette
+                    title: "Quick test selected template(s) with layout"
+
+                    Instantiator {
+                        model: testRendersModel.layout_categories
+
+                        delegate: CustomMenuItem {
+                            required property int index
+                            required property string modelData
+
+                            systemPalette: appSystemPalette
+                            text: modelData
+                            onTriggered: appWindow.currentRenderingModel.test_render(modelData, true)
+                        }
+
+                        onObjectAdded: (index, object) => selectedTemplateQuickLayoutsSubMenu.insertItem(index, object)
+                        onObjectRemoved: (index, object) => selectedTemplateQuickLayoutsSubMenu.removeItem(object)
+                    }
+                }
+                CustomMenu {
+                    id: selectedTemplateSpecificTestCaseSubMenu
+
+                    systemPalette: appSystemPalette
+                    title: "Test selected template(s) with test case"
+
+                    Instantiator {
+                        model: testRendersModel.layout_categories
+
+                        delegate: CustomMenu {
+                            id: selectedTemplateSpecificLayoutTestCaseSubMenu
+
+                            required property int index
+                            required property string modelData
+
+                            systemPalette: appSystemPalette
+                            title: modelData
+
+                            Instantiator {
+                                model: testRendersModel.get_test_cases_for_layout(selectedTemplateSpecificLayoutTestCaseSubMenu.modelData)
+
+                                delegate: CustomMenuItem {
+                                    required property int index
+                                    required property string modelData
+
+                                    systemPalette: appSystemPalette
+                                    text: modelData
+                                    onTriggered: appWindow.currentRenderingModel.test_render(selectedTemplateSpecificLayoutTestCaseSubMenu.modelData, false, modelData)
+                                }
+
+                                onObjectAdded: (index, object) => selectedTemplateSpecificLayoutTestCaseSubMenu.insertItem(index, object)
+                                onObjectRemoved: (index, object) => selectedTemplateSpecificLayoutTestCaseSubMenu.removeItem(object)
+                            }
+                        }
+
+                        onObjectAdded: (index, object) => selectedTemplateSpecificTestCaseSubMenu.insertMenu(index, object)
+                        onObjectRemoved: (index, object) => selectedTemplateSpecificTestCaseSubMenu.removeMenu(object)
+                    }
                 }
             }
         }
-
         CustomMenu {
             systemPalette: appSystemPalette
             title: "Help"
@@ -412,106 +443,143 @@ ApplicationWindow {
             }
         }
 
+        // Primary modes at the left, before the File / Tools / Help menus.
+        RowLayout {
+            parent: menuBar
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 4
+
+            // Studio and Trim are the two visible, first-class workflows.
+            Button {
+                id: studioNavigationButton
+                text: "Studio"
+                implicitWidth: 86
+                implicitHeight: 30
+                hoverEnabled: enabled
+                onClicked: appWindow.currentModeIndex = 2
+                HoverHandler {
+                    enabled: studioNavigationButton.enabled
+                    cursorShape: Qt.PointingHandCursor
+                }
+                contentItem: Text {
+                    text: studioNavigationButton.text
+                    color: appWindow.currentModeIndex === 2 ? "#dcf8e8" : "#c7d0d5"
+                    font.pixelSize: 13
+                    font.bold: appWindow.currentModeIndex === 2
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: 6
+                    color: appWindow.currentModeIndex === 2 ? "#23583f"
+                        : studioNavigationButton.hovered ? "#323a40" : "transparent"
+                    border.width: 1
+                    border.color: appWindow.currentModeIndex === 2 ? "#4aa876" : "transparent"
+                }
+            }
+            Button {
+                id: trimNavigationButton
+                text: "Trim"
+                implicitWidth: 76
+                implicitHeight: 30
+                hoverEnabled: enabled
+                onClicked: appWindow.currentModeIndex = 3
+                HoverHandler {
+                    enabled: trimNavigationButton.enabled
+                    cursorShape: Qt.PointingHandCursor
+                }
+                contentItem: Text {
+                    text: trimNavigationButton.text
+                    color: appWindow.currentModeIndex === 3 ? "#dcf8e8" : "#c7d0d5"
+                    font.pixelSize: 13
+                    font.bold: appWindow.currentModeIndex === 3
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: 6
+                    color: appWindow.currentModeIndex === 3 ? "#23583f"
+                        : trimNavigationButton.hovered ? "#323a40" : "transparent"
+                    border.width: 1
+                    border.color: appWindow.currentModeIndex === 3 ? "#4aa876" : "transparent"
+                }
+            }
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.preferredHeight: 21
+                Layout.leftMargin: 5
+                Layout.rightMargin: 5
+                color: "#485157"
+            }
+        }
+
+        // The existing queue / render / settings actions stay on the right.
         RowLayout {
             parent: menuBar
             anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.rightMargin: 7
+            spacing: 4
 
-            Item {
-                width: childrenRect.width
-                height: childrenRect.height
-
-                Rectangle {
-                    id: pluginUpdateDot
-
-                    anchors.right: pluginsButton.right
-                    anchors.top: pluginsButton.top
-                    anchors.topMargin: 4
-
-                    width: 8
-                    height: 8
-                    radius: width / 2
-                    color: appSystemPalette.accent
-                    visible: false
-                }
-                CustomButton {
-                    id: pluginsButton
-
-                    systemPalette: appSystemPalette
-                    text: `<font face="${emojiFontLoader.name}">🔌</font> Plugins`
-                    onClicked: {
-                        pluginUpdateDot.visible = false;
-                        if (pluginUpdaterLoader.active) {
-                            pluginUpdaterLoader.item?.show();
-                        } else {
-                            pluginUpdaterLoader.active = true;
-                        }
-                    }
-                }
-
-                Connections {
-                    target: pluginUpdaterModel
-                    function onUpdateAvailable() {
-                        if (!pluginUpdaterLoader.item?.visible)
-                            pluginUpdateDot.visible = true;
-                    }
-                }
-            }
-            Item {
-                width: childrenRect.width
-                height: childrenRect.height
-
-                Rectangle {
-                    id: templateUpdateDot
-
-                    anchors.right: updaterButton.right
-                    anchors.top: updaterButton.top
-                    anchors.topMargin: 4
-
-                    width: 8
-                    height: 8
-                    radius: width / 2
-                    color: appSystemPalette.accent
-                    visible: false
-                }
-                CustomButton {
-                    id: updaterButton
-
-                    systemPalette: appSystemPalette
-                    text: `<font face="${emojiFontLoader.name}">⬇️</font> Updater`
-                    onClicked: {
-                        templateUpdateDot.visible = false;
-                        if (templateUpdaterLoader.active) {
-                            templateUpdaterLoader.item?.show();
-                        } else {
-                            templateUpdaterLoader.active = true;
-                        }
-                    }
-                }
-
-                Connections {
-                    target: templateUpdaterModel
-                    function onUpdateAvailable() {
-                        if (!templateUpdaterLoader.item?.visible)
-                            templateUpdateDot.visible = true;
-                    }
+            CustomButton {
+                systemPalette: appSystemPalette
+                implicitHeight: 30
+                text: `<font face="${emojiFontLoader.name}">⏩</font> Queue (${renderOperationsConnections.renderQueueSize})`
+                onClicked: {
+                    if (renderQueueLoader.active)
+                        renderQueueLoader.item?.show();
+                    else
+                        renderQueueLoader.active = true;
                 }
             }
             CustomButton {
-                id: settingsButton
-
                 systemPalette: appSystemPalette
+                implicitHeight: 30
+                text: renderOperationsModel.is_rendering
+                    ? `<font face="${emojiFontLoader.name}">🚫</font> Cancel`
+                    : `<font face="${emojiFontLoader.name}">⏯️</font> Resume`
+                enabled: renderOperationsConnections.renderQueueSize || renderOperationsModel.is_rendering
+                onClicked: renderOperationsModel.is_rendering
+                    ? renderOperationsModel.cancel() : renderOperationsModel.resume()
+            }
+            CustomButton {
+                id: renderButton
+                systemPalette: appSystemPalette
+                implicitHeight: 30
+                text: `<font face="${emojiFontLoader.name}">▶️</font> Render`
+                onClicked: appWindow.currentRenderingModel.render_selections()
+            }
+            CustomButton {
+                id: settingsButton
+                systemPalette: appSystemPalette
+                implicitHeight: 30
                 text: `<font face="${emojiFontLoader.name}">⚙️</font> Settings`
                 onClicked: openSettings()
 
+                // TemplateList still uses this function via openSettings.
                 function openSettings(templateName = "", className = "", pluginName = ""): void {
                     settingsTreeModel.select_settings_section(templateName, className, pluginName);
-                    if (settingsWindowLoader.active) {
+                    if (settingsWindowLoader.active)
                         settingsWindowLoader.item?.show();
-                    } else {
+                    else
                         settingsWindowLoader.active = true;
-                    }
                 }
             }
+        }
+
+    }
+
+    Connections {
+        target: pluginUpdaterModel
+        function onUpdateAvailable() {
+            appWindow.pluginUpdateAvailable = true;
+        }
+    }
+    Connections {
+        target: templateUpdaterModel
+        function onUpdateAvailable() {
+            appWindow.templateUpdateAvailable = true;
         }
     }
 
@@ -643,22 +711,6 @@ ApplicationWindow {
     }
 
     Loader {
-        id: templateUpdaterLoader
-
-        active: false
-        asynchronous: true
-        onLoaded: item.show()
-
-        Component.onCompleted: {
-            setSource("views/TemplateUpdater.qml", {
-                systemPalette: appSystemPalette,
-                updaterModel: templateUpdaterModel,
-                pathModel: filePathModel
-            });
-        }
-    }
-
-    Loader {
         id: pluginUpdaterLoader
 
         active: false
@@ -735,80 +787,6 @@ ApplicationWindow {
         anchors.fill: parent
         spacing: 0
 
-        TabBar {
-            id: viewTabBar
-
-            Layout.fillWidth: true
-
-            width: parent.width
-            implicitHeight: 30
-            spacing: 0
-            palette.window: appSystemPalette.mid
-            palette.dark: appSystemPalette.mid
-            palette.mid: appSystemPalette.midlight
-
-            CustomTabButton {
-                systemPalette: appSystemPalette
-                text: "Templates"
-                implicitHeight: viewTabBar.implicitHeight
-                background.implicitHeight: viewTabBar.implicitHeight
-            }
-            CustomTabButton {
-                systemPalette: appSystemPalette
-                text: "Batch mode"
-                implicitHeight: viewTabBar.implicitHeight
-                background.implicitHeight: viewTabBar.implicitHeight
-            } 
-            CustomTabButton {
-                systemPalette: appSystemPalette
-                text: "Studio"
-              implicitHeight: viewTabBar.implicitHeight
-                 background.implicitHeight: viewTabBar.implicitHeight
-            }
-
-            CustomTabButton {
-                systemPalette: appSystemPalette
-                text: "Trim"
-                implicitHeight: viewTabBar.implicitHeight
-                background.implicitHeight: viewTabBar.implicitHeight
-            }
-
-            RowLayout {
-                parent: viewTabBar
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 0
-
-                CustomButton {
-                    systemPalette: appSystemPalette
-                    implicitHeight: viewTabBar.implicitHeight
-                    text: `<font face="${emojiFontLoader.name}">⏩</font> Queue (${renderOperationsConnections.renderQueueSize})`
-                    onClicked: {
-                        if (renderQueueLoader.active) {
-                            renderQueueLoader.item?.show();
-                        } else {
-                            renderQueueLoader.active = true;
-                        }
-                    }
-                }
-                CustomButton {
-                    systemPalette: appSystemPalette
-                    implicitHeight: viewTabBar.implicitHeight
-                    text: renderOperationsModel.is_rendering ? `<font face="${emojiFontLoader.name}">🚫</font> Cancel` : `<font face="${emojiFontLoader.name}">⏯️</font> Resume`
-                    enabled: renderOperationsConnections.renderQueueSize || renderOperationsModel.is_rendering
-                    onClicked: renderOperationsModel.is_rendering ? renderOperationsModel.cancel() : renderOperationsModel.resume()
-                }
-                CustomButton {
-                    id: renderButton
-
-                    systemPalette: appSystemPalette
-                    implicitHeight: viewTabBar.implicitHeight
-                    text: `<font face="${emojiFontLoader.name}">▶️</font> Render`
-                    onClicked: appWindow.currentRenderingModel.render_selections()
-                }
-            }
-        }
-
         SplitView {
             id: rootSplit
 
@@ -821,7 +799,7 @@ ApplicationWindow {
                 SplitView.fillHeight: true
                 SplitView.fillWidth: true
 
-                currentIndex: viewTabBar.currentIndex
+                currentIndex: appWindow.currentModeIndex
 
                 Rectangle {
                     color: appSystemPalette.window
@@ -870,10 +848,63 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     source: "views/TrimWorkspace.qml"
                 }
+                // ProxyStudio: Embedded template updater (same window).
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 0
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 48
+                        color: "#1d2124"
+                        border.color: "#363e43"
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 18
+                            anchors.rightMargin: 18
+                            spacing: 10
+                            Text {
+                                text: "Template Updater"
+                                font.pixelSize: 20
+                                font.bold: true
+                                color: "#f5f6f7"
+                            }
+                            Item { Layout.fillWidth: true }
+                            CustomButton {
+                                systemPalette: appSystemPalette
+                                text: "Refresh"
+                                implicitHeight: 32
+                                enabled: !templateUpdaterModel.fetching_data
+                                onClicked: templateUpdaterModel.fetch_data()
+                            }
+                            CustomButton {
+                                systemPalette: appSystemPalette
+                                text: "Back to Studio"
+                                implicitHeight: 32
+                                onClicked: appWindow.currentModeIndex = 2
+                            }
+                        }
+                    }
+                    Loader {
+                        id: embeddedTemplateUpdaterLoader
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        active: appWindow.currentModeIndex === 4
+                        asynchronous: true
+                        Component.onCompleted: {
+                            setSource("views/TemplateUpdaterEmbedded.qml", {
+                                systemPalette: appSystemPalette,
+                                updaterModel: templateUpdaterModel,
+                                pathModel: filePathModel
+                            });
+                        }
+                    }
+                }
 
             }
             Console {
-                visible: viewTabBar.currentIndex < 2
+                visible: appWindow.currentModeIndex < 2
                 
                 SplitView.preferredHeight: 200
                 SplitView.fillWidth: true

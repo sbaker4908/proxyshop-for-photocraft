@@ -9,38 +9,42 @@ Item {
     id: workspace
 
     property bool showOriginal: false
-    readonly property color textPrimary: "#f0f2f2"
-    readonly property color textMuted: "#9fa9b1"
-    readonly property color accent: "#50bd87"
-    readonly property color borderColor: "#353c42"
+    // Tool-panel sizing matches Studio; Trim keeps its own darker surface colors.
+    readonly property color textPrimary: "#f5f6f7"
+    readonly property color textMuted: "#9da5ae"
+    readonly property color accent: "#44bf7e"
+    readonly property color borderColor: "#373e43"
 
+    // Visual metrics and button states mirror StudioButton.
     component TrimButton: Button {
         id: control
         property bool primary: false
-        implicitHeight: 42
-        leftPadding: 14
-        rightPadding: 14
-        font.pixelSize: 13
+        implicitHeight: primary ? 48 : 36
+        font.pixelSize: primary ? 15 : 12
         font.bold: primary
         hoverEnabled: enabled
-        contentItem: Text {
-            text: control.text
-            font: control.font
-            color: control.enabled ? (control.primary ? "#0a2015" : "#e0e7e8") : "#818c90"
-            verticalAlignment: Text.AlignVCenter
-            horizontalAlignment: Text.AlignHCenter
-            elide: Text.ElideRight
-        }
+        leftPadding: 12
+        rightPadding: 12
         HoverHandler {
             enabled: control.enabled
             cursorShape: Qt.PointingHandCursor
         }
         background: Rectangle {
-            radius: 7
-            color: !control.enabled ? "#29302d"
-                : control.primary ? (control.down ? "#3d9e6d" : control.hovered ? "#60cd98" : "#50bd87")
-                : control.down ? "#343c42" : control.hovered ? "#343c42" : "#292e33"
-            border.color: control.primary && control.enabled ? "#419d6e" : "#414a50"
+            radius: 6
+            color: !control.enabled ? "#29312e"
+                : control.primary ? (control.down ? "#176841" : control.hovered ? "#239e61" : "#198754")
+                : control.hovered ? "#43494d" : "#343a3e"
+            border.width: 1
+            border.color: !control.enabled ? "#3a4640"
+                : control.primary ? "#36af73" : "#4b5359"
+        }
+        contentItem: Text {
+            text: control.text
+            font: control.font
+            color: control.enabled ? "#f7fbf9" : "#818e87"
+            verticalAlignment: Text.AlignVCenter
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
         }
     }
 
@@ -71,8 +75,8 @@ Item {
 
         // Controls and source information
         Rectangle {
-            Layout.preferredWidth: 315
-            Layout.minimumWidth: 270
+            Layout.preferredWidth: 346
+            Layout.minimumWidth: 280
             Layout.fillHeight: true
             color: "#1b1e22"
             radius: 10
@@ -80,28 +84,27 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 22
-                spacing: 12
+                anchors.margins: 18
+                spacing: 9
 
                 Text {
                     text: "Trim"
                     color: workspace.textPrimary
                     font.bold: true
-                    font.pixelSize: 21
+                    font.pixelSize: 20
                 }
 
                 Text {
                     Layout.fillWidth: true
                     text: "Remove print bleed and round the corners of a completed card render."
                     color: workspace.textMuted
-                    font.pixelSize: 13
+                    font.pixelSize: 12
+                    Layout.bottomMargin: 10
                     wrapMode: Text.WordWrap
-                    lineHeight: 1.3
                 }
 
                 TrimButton {
                     Layout.fillWidth: true
-                    Layout.topMargin: 10
                     text: "Open Rendered Card..."
                     enabled: !trimModel.busy
                     onClicked: sourcePicker.open()
@@ -110,7 +113,7 @@ Item {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 1
-                    Layout.topMargin: 6
+                    Layout.topMargin: 7
                     Layout.bottomMargin: 4
                     color: workspace.borderColor
                 }
@@ -119,7 +122,6 @@ Item {
                     text: "SOURCE FILE"
                     font.bold: true
                     font.pixelSize: 11
-                    font.letterSpacing: 0.6
                     color: workspace.textMuted
                 }
 
@@ -183,7 +185,6 @@ Item {
                     text: "OUTPUT"
                     font.bold: true
                     font.pixelSize: 11
-                    font.letterSpacing: 0.6
                     color: workspace.textMuted
                 }
 
@@ -261,11 +262,11 @@ Item {
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 18
-                spacing: 14
+                spacing: 11
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: 9
 
                     Text {
                         text: "Card Preview"
