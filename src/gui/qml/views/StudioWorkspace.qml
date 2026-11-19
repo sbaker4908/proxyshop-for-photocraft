@@ -259,22 +259,17 @@ Item {
     }
     readonly property bool canRender: !renderBusy && missingRequirement.length === 0
 
-    // UI-only status tones: an entire subtle panel replaces icon-based status.
-    // Readiness takes priority over an older completed render, so missing
-    // information is never presented as ready merely because a past job finished.
+    // A missing field takes priority over stale errors from a previous render.
     readonly property string renderStatusTone:
-        activePhase === "error" ? "error"
-        : renderBusy ? "working"
+        renderBusy ? "working"
         : missingRequirement.length > 0 ? "attention"
+        : activePhase === "error" ? "error"
         : "success"
 
-    // Keep the indicator succinct. Detailed readiness checks still govern
-    // whether Render Card is enabled; only their visual presentation changes.
     readonly property string renderStatusTitle:
-        activePhase === "error" ? "Render failed"
-        : renderBusy
-            ? (activeStatus || "Rendering in PhotoCraft...")
+        renderBusy ? (activeStatus || "Rendering in PhotoCraft...")
         : missingRequirement.length > 0 ? "Not ready to render"
+        : activePhase === "error" ? "Render failed"
         : activePhase === "complete" && currentPsdSaved
             ? (activeLaunchWarning.length > 0
                 ? "PSD saved · open manually"
@@ -282,6 +277,10 @@ Item {
                     ? "Opened in PhotoCraft" : "PSD saved")
         : activePhase === "complete" && previewIsCurrent ? "Render complete"
         : "Ready to render"
+
+    // ProxyStudio: show the exact missing requirement below the render status.
+    readonly property string renderStatusDetail: !renderBusy && missingRequirement.length > 0
+        ? missingRequirement : ""
 
     readonly property color accent: "#44bf7e"
     readonly property color muted: "#9da5ae"
@@ -1106,7 +1105,7 @@ Item {
                 id: renderSettingsScroll
                 anchors.fill: parent
                 anchors.margins: 18
-                anchors.bottomMargin: 138
+                anchors.bottomMargin: workspace.renderStatusDetail.length > 0 ? 176 : 138
                 clip: true
                 ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
@@ -1492,7 +1491,7 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: 128
+                height: workspace.renderStatusDetail.length > 0 ? 166 : 128
                 radius: 10
                 color: "#1d2124"
 
@@ -1525,10 +1524,10 @@ Item {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 40
+                        Layout.preferredHeight: workspace.renderStatusDetail.length > 0 ? 78 : 40
                         radius: 7
 
-                        // One compact, low-saturation status label.
+                        // The readiness explanation appears only when rendering is blocked.
                         color: workspace.renderStatusTone === "error" ? "#342b2c"
                             : workspace.renderStatusTone === "working" ? "#2a3034"
                             : workspace.renderStatusTone === "attention" ? "#302e29"
@@ -1539,20 +1538,32 @@ Item {
                             : workspace.renderStatusTone === "attention" ? "#524b40"
                             : "#43584b"
 
-                        Text {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            text: workspace.renderStatusTitle
-                            color: workspace.renderStatusTone === "error" ? "#dcb6b9"
-                                : workspace.renderStatusTone === "working" ? "#bdcbd3"
-                                : workspace.renderStatusTone === "attention" ? "#d6c7a6"
-                                : "#afcdbc"
-                            font.pixelSize: 12
-                            font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                            elide: Text.ElideRight
+                        Column {
+                            anchors.centerIn: parent
+                            width: parent.width - 24
+                            spacing: workspace.renderStatusDetail.length > 0 ? 4 : 0
+
+                            Text {
+                                width: parent.width
+                                text: workspace.renderStatusTitle
+                                color: workspace.renderStatusTone === "error" ? "#dcb6b9"
+                                    : workspace.renderStatusTone === "working" ? "#bdcbd3"
+                                    : workspace.renderStatusTone === "attention" ? "#d6c7a6"
+                                    : "#afcdbc"
+                                font.pixelSize: 12
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                width: parent.width
+                                visible: workspace.renderStatusDetail.length > 0
+                                text: workspace.renderStatusDetail
+                                color: "#c8c4ba"
+                                font.pixelSize: 11
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.WordWrap
+                            }
                         }
                     }
                 }
