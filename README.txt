@@ -1,25 +1,24 @@
-ProxyStudio — Card Preview Pan + Zoom V1
-========================================
+ProxyStudio - Copy Rendered Image V1
+====================================
 
-Adds navigation to the center Card Preview pane in Studio.
-
-Controls:
-- Mouse wheel over the rendered card: zoom in / out (up to 800%, minimum Fit)
-- Left-click and drag on a zoomed card: pan
-- Plus and minus buttons: step zoom in / out
-- Fit button or double-click inside the preview: reset to fit
-- Loading a new render, or switching preview faces: reset to fit
-
-How to install:
 1. Close ProxyStudio.
-2. Extract install_preview_panzoom_v1.py beside main.py in your project root.
-3. Run: uv run python install_preview_panzoom_v1.py
-4. Run: uv run main.py
+2. Extract install_copy_rendered_image_v1.py to your project root,
+   C:\Projects\proxyshop-for-photocraft, beside main.py.
+3. Run in PowerShell:
+      uv run python install_copy_rendered_image_v1.py
+      uv run main.py
 
-Changes only src/gui/qml/views/StudioWorkspace.qml.
-Does not modify the exported card image, render logic, Trim view, or settings.
-Creates a timestamped backup under .git/proxystudio-patch-backups/preview-panzoom-v1/.
-Idempotent: running it again will not duplicate the controls.
+A compact "Copy image" button appears in the upper-right of the image preview,
+when a rendered PNG/JPG is visible. Click it to put the entire original-resolution
+image on the system image clipboard. "Copied!" confirms the operation; "Copy
+failed" shows an error tooltip on hover. This copies an image, NOT a filename.
+The existing Fit, +/- zoom, pan, and card rendering are unchanged.
 
-If the installer says preview markup does not match, it has left the source
-unchanged; please share the error so the patch can be adjusted safely.
+Files changed by the installer:
+  main.py
+  src/gui/qml/views/StudioWorkspace.qml
+New file:
+  src/gui/qml/models/studio_clipboard_model.py
+
+The installer stores backups inside .git/proxystudio-patch-backups/clipboard-v1.
+It does not modify render output files or saved defaults.

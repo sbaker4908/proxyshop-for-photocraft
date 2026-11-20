@@ -36,6 +36,7 @@ def launch_gui(
     from src.gui.qml.models.settings_model import SettingsModel
     from src.gui.qml.models.settings_tree_model import SettingsTreeModel
     from src.gui.qml.models.studio_card_model import StudioCardModel
+    from src.gui.qml.models.studio_clipboard_model import StudioClipboardModel
     from src.gui.qml.models.studio_dual_render_model import StudioDualRenderModel
     from src.gui.qml.models.studio_render_preview_model import StudioRenderPreviewModel
     from src.gui.qml.models.studio_render_model import StudioRenderModel
@@ -104,6 +105,7 @@ def launch_gui(
     image_transform_model = ImageTransformModel(file_dialog_model=file_dialog_model)
     photocraft_setup_model = PhotocraftSetupModel(APP)
     studio_card_model = StudioCardModel()
+    studio_clipboard_model = StudioClipboardModel()
     studio_render_preview_model = StudioRenderPreviewModel(render_queue)
     trim_model = TrimModel()
     studio_render_model = StudioRenderModel(
@@ -128,6 +130,7 @@ def launch_gui(
     root_context.setContextProperty("filePathModel", file_path_model)
     root_context.setContextProperty("fileDialogModel", file_dialog_model)
     root_context.setContextProperty("studioCardModel", studio_card_model)
+    root_context.setContextProperty("studioClipboardModel", studio_clipboard_model)
     root_context.setContextProperty("studioRenderPreviewModel", studio_render_preview_model)
     root_context.setContextProperty("studioRenderModel", studio_render_model)
     root_context.setContextProperty("studioDualRenderModel", studio_dual_render_model)

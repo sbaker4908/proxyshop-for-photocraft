@@ -33,6 +33,19 @@ Item {
     }
     property bool outputDefaultsSavedThisSession: false
 
+    // Studio preview clipboard V1.
+    property string copyPreviewFeedback: ""
+    property string copyPreviewError: ""
+    Timer {
+        id: copyPreviewFeedbackTimer
+        interval: 1800
+        repeat: false
+        onTriggered: {
+            workspace.copyPreviewFeedback = "";
+            workspace.copyPreviewError = "";
+        }
+    }
+
     // The Studio workflow intentionally remains separate from the legacy Render button.
     property url previewCardUrl: ""
     property var dualPreviewUrls: ["", ""]
@@ -1296,6 +1309,35 @@ Item {
                             color: workspace.muted
                             horizontalAlignment: Text.AlignHCenter
                             wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    // Copy the original image data, independent of preview zoom or pan.
+                    StudioButton {
+                        id: copyRenderedImageButton
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.margins: 12
+                        z: 3
+                        width: 106
+                        height: 32
+                        subtle: true
+                        visible: renderedCardImage.status === Image.Ready
+                        enabled: renderedCardImage.status === Image.Ready
+                        text: workspace.copyPreviewFeedback.length > 0
+                            ? workspace.copyPreviewFeedback : "Copy image"
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 550
+                        ToolTip.text: workspace.copyPreviewError.length > 0
+                            ? workspace.copyPreviewError
+                            : "Copy full-resolution rendered image to clipboard"
+                        onClicked: {
+                            const error = studioClipboardModel.copy_image(
+                                String(workspace.displayedPreviewUrl));
+                            workspace.copyPreviewError = error;
+                            workspace.copyPreviewFeedback = error.length > 0
+                                ? "Copy failed" : "Copied!";
+                            copyPreviewFeedbackTimer.restart();
                         }
                     }
 
