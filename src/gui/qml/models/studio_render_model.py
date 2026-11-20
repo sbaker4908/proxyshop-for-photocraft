@@ -91,6 +91,26 @@ class StudioRenderModel(QObject):
         """Confirmed output URI of the latest successful Studio render."""
         return self._last_output_url
 
+    @Slot(int, str, result=bool)
+    def supports_layout(self, template_index: int, layout_kind: str) -> bool:
+        """Check the selected installed frame maps to a single-sided layout."""
+        kinds = {
+            "normal": LayoutType.Normal,
+            "planeswalker": LayoutType.Planeswalker,
+        }
+        layout_type = kinds.get(layout_kind)
+        if layout_type is None or not 0 <= template_index < len(self._template_list_model.items):
+            return False
+        chosen = self._template_list_model.items[template_index]
+        if not chosen.is_installed:
+            return False
+        try:
+            match = chosen.assembled_template.get_class_name_and_file_for_layout(layout_type)
+            return match is not None and match[1].is_file()
+        except Exception:
+            _logger.exception("Unable to inspect Studio template layout support")
+            return False
+
     # V1 option support is based on the actual template class, not its display name.
     # Other templates get no custom settings until we explicitly support them.
     @Slot(int, result=bool)
@@ -235,9 +255,9 @@ class StudioRenderModel(QObject):
     ) -> None:
         art_temp_dir: TemporaryDirectory[str] | None = None
         try:
-            if source.layout != LayoutScryfall.Normal or source.card_faces:
+            if source.layout not in {LayoutScryfall.Normal, LayoutScryfall.Planeswalker} or source.card_faces:
                 raise ValueError(
-                    "Studio Render currently supports single-faced normal cards. "
+                    "Studio Render currently supports single-faced Normal and Planeswalker cards. "
                     "Use the original Render button for this card's special layout."
                 )
 
@@ -245,6 +265,20 @@ class StudioRenderModel(QObject):
             type_line = form.get("type_line", "").strip()
             if not name or not type_line:
                 raise ValueError("Card name and type line are required.")
+
+            is_planeswalker = "Planeswalker" in type_line
+            if source.layout == LayoutScryfall.Planeswalker and not is_planeswalker:
+                raise ValueError("Planeswalker cards require 'Planeswalker' in the type line.")
+            loyalty_value = form.get("loyalty", "").strip()
+            if is_planeswalker and not loyalty_value:
+                raise ValueError("Enter a starting loyalty for this planeswalker.")
+            required_layout = "planeswalker" if is_planeswalker else "normal"
+            selected_index = self._template_list_model.selected_index
+            if not self.supports_layout(selected_index, required_layout):
+                raise ValueError(
+                    "Choose an installed template supporting "
+                    + ("planeswalkers." if is_planeswalker else "normal cards.")
+                )
 
             rarity = form.get("rarity", "").strip().lower()
             if rarity:
@@ -260,10 +294,12 @@ class StudioRenderModel(QObject):
             source.name = name
             source.mana_cost = form.get("mana_cost", "").strip()
             source.type_line = type_line
+            source.layout = LayoutScryfall.Planeswalker if is_planeswalker else LayoutScryfall.Normal
+            source.loyalty = loyalty_value if is_planeswalker else None
             source.oracle_text = form.get("oracle_text", "")
             source.flavor_text = form.get("flavor_text", "")
-            source.power = form.get("power", "").strip() or None
-            source.toughness = form.get("toughness", "").strip() or None
+            source.power = None if is_planeswalker else (form.get("power", "").strip() or None)
+            source.toughness = None if is_planeswalker else (form.get("toughness", "").strip() or None)
             source.artist = form.get("artist", "").strip() or None
             source.set = form.get("set", "").strip().lower() or source.set
 

@@ -411,15 +411,36 @@ class PlaneswalkerMod(FullartMod, StarterTemplate):
             else None
         )
 
-        # Update ability cost if needed
+        # Configure the DUPLICATED badge, not the hidden PSD source.  In
+        # PhotoCraft, copying a hidden symbol/colon can preserve its hidden
+        # state; the old code never made those newly generated copies visible.
         if not static:
-            if layer := psd.getLayer(LAYERS.COST, icon):
-                layer.textItem.contents = ability.get("cost", "0")
             if icon:
                 icon = (
                     icon.duplicate(self.icons[-1], ElementPlacement.PlaceBefore)
                     if (self.icons and self.icons[-1])
                     else icon.duplicate()
+                )
+                icon.visible = True
+                if cost_layer := psd.getLayer(LAYERS.COST, icon):
+                    cost_layer.textItem.contents = ability.get("cost", "0")
+                    cost_layer.visible = True
+                else:
+                    _logger.warning(
+                        "Planeswalker icon %r has no Cost text layer in %s",
+                        ability.get("icon"), self.layout.template_file.name,
+                    )
+            else:
+                _logger.warning(
+                    "Planeswalker loyalty icon group %r missing from %s",
+                    ability.get("icon"), self.layout.template_file.name,
+                )
+            if colon:
+                colon.visible = True
+            else:
+                _logger.warning(
+                    "Planeswalker Colon text layer missing from %s",
+                    self.layout.template_file.name,
                 )
 
         # Add ability, icons, and colons

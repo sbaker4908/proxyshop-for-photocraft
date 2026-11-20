@@ -60,6 +60,7 @@ class StudioCardModel(QObject):
             "flavor_text": face.flavor_text or "",
             "power": face.power or "",
             "toughness": face.toughness or "",
+            "loyalty": face.loyalty or "",
             "artist": face.artist or source.artist or "",
             "set": source.set.upper(),
             "rarity": str(source.rarity),
@@ -122,7 +123,7 @@ class StudioCardModel(QObject):
                 if data is None:
                     raise ValueError("Card not found on Scryfall.")
 
-                normal = data.layout == LayoutScryfall.Normal and not data.card_faces
+                normal = data.layout in {LayoutScryfall.Normal, LayoutScryfall.Planeswalker} and not data.card_faces
                 dual = (
                     data.layout in {LayoutScryfall.Transform, LayoutScryfall.MDFC}
                     and data.card_faces is not None
@@ -134,6 +135,7 @@ class StudioCardModel(QObject):
                     )
                 )
                 kind = (
+                    "planeswalker" if normal and (data.layout == LayoutScryfall.Planeswalker or "Planeswalker" in (data.type_line or "")) else
                     "normal" if normal else
                     ("mdfc" if data.layout == LayoutScryfall.MDFC else "transform") if dual else
                     "unsupported"

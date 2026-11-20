@@ -16,6 +16,7 @@ from src.utils.scryfall import ScryfallCard, ScryfallCardFace
 
 _CUSTOM_LAYOUTS: dict[str, LayoutScryfall] = {
     "normal": LayoutScryfall.Normal,
+    "planeswalker": LayoutScryfall.Planeswalker,
     "transform": LayoutScryfall.Transform,
     "mdfc": LayoutScryfall.MDFC,
 }
@@ -80,7 +81,7 @@ def create_blank_card_source(layout_kind: str) -> ScryfallCard:
         "frame_effects": [],
     }
 
-    if layout_kind != "normal":
+    if layout_kind in {"transform", "mdfc"}:
         payload["name"] = "Custom Front // Custom Back"
         payload["card_faces"] = [
             ScryfallCardFace(

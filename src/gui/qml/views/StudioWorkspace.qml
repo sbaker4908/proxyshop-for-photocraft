@@ -17,6 +17,9 @@ Item {
     property bool loadingFaceFields: false
     readonly property bool isDualFace: studioCardModel.card.layout_kind === "transform"
         || studioCardModel.card.layout_kind === "mdfc"
+    // Also recognize an ordinary card that the user has changed into a planeswalker.
+    readonly property bool isPlaneswalker: studioCardModel.card.layout_kind === "planeswalker"
+        || (!isDualFace && (typeLine.text || "").indexOf("Planeswalker") !== -1)
     readonly property bool renderBusy: studioRenderModel.busy || studioDualRenderModel.busy
     readonly property var activeFaceDraft: faceDrafts.length > activeFaceIndex
         ? faceDrafts[activeFaceIndex] : ({})
@@ -36,6 +39,7 @@ Item {
             include_flavor_text: includeFlavorText ? "true" : "false",
             power: power.text,
             toughness: toughness.text,
+            loyalty: loyalty.text,
             artist: artist.text,
             set: setCode.text,
             rarity: rarity.text
@@ -57,6 +61,7 @@ Item {
         flavorText.text = face.flavor_text || "";
         power.text = face.power || "";
         toughness.text = face.toughness || "";
+        loyalty.text = face.loyalty || "";
         artist.text = face.artist || "";
         setCode.text = face.set || "";
         rarity.text = face.rarity || "";
@@ -233,8 +238,9 @@ Item {
         ? (templateListModel.get_data(selectedTemplateIndex, "img") || "") : ""
 
     // These are readiness checks, not guesses about render progress.
-    readonly property bool selectedTemplateSupportsCard: !isDualFace
-        || studioDualRenderModel.supports_layout(selectedTemplateIndex, studioCardModel.card.layout_kind || "")
+    readonly property bool selectedTemplateSupportsCard: isDualFace
+        ? studioDualRenderModel.supports_layout(selectedTemplateIndex, studioCardModel.card.layout_kind || "")
+        : !isPlaneswalker || studioRenderModel.supports_layout(selectedTemplateIndex, "planeswalker")
     readonly property string missingRequirement: {
         if (studioCardModel.loading) return "Looking up card details...";
         if (!studioCardModel.card.layout_kind) return "Find a card or create a new one.";
@@ -247,6 +253,10 @@ Item {
             const side = isDualFace ? (i === 0 ? "front" : "back") + " face" : "card";
             if (!(face.name || "").trim()) return "Enter a name for the " + side + ".";
             if (!(face.type_line || "").trim()) return "Enter a type line for the " + side + ".";
+            if (isPlaneswalker && (face.type_line || "").indexOf("Planeswalker") === -1)
+                return "Planeswalker type line must contain 'Planeswalker'.";
+            if (isPlaneswalker && !(face.loyalty || "").trim())
+                return "Enter starting loyalty for the planeswalker.";
             if (!(face.manual_artwork || face.art_crop || "").length)
                 return "Choose artwork for the " + side + ".";
         }
@@ -254,7 +264,8 @@ Item {
             return "The two faces need different names.";
         if (!selectedTemplateInstalled) return "Select an installed template.";
         if (!selectedTemplateSupportsCard)
-            return "Choose a template that supports both faces.";
+            return isPlaneswalker ? "Choose a template that supports planeswalkers."
+                : "Choose a template that supports both faces.";
         return "";
     }
     readonly property bool canRender: !renderBusy && missingRequirement.length === 0
@@ -423,6 +434,7 @@ Item {
                 flavorText.text = "";
                 power.text = "";
                 toughness.text = "";
+                loyalty.text = "";
                 artist.text = "";
                 setCode.text = "";
                 rarity.text = "";
@@ -529,6 +541,15 @@ Item {
                 text: "Normal  ·  Single face"
                 onClicked: {
                     studioCardModel.create_card("normal");
+                    cardSearchField.text = "";
+                    createCardPopup.close();
+                }
+            }
+            StudioButton {
+                Layout.fillWidth: true
+                text: "Planeswalker  ·  Single face"
+                onClicked: {
+                    studioCardModel.create_card("planeswalker");
                     cardSearchField.text = "";
                     createCardPopup.close();
                 }
@@ -721,7 +742,7 @@ Item {
                         onTextChanged: workspace.captureCurrentFace()
                         Layout.fillWidth: true
                         enabled: !workspace.renderBusy
-                        placeholderText: "Creature — Elf Druid"
+                        placeholderText: workspace.isPlaneswalker ? "Legendary Planeswalker — Name" : "Creature — Elf Druid"
                     }
                     Text { text: "Rules text"; color: "#c4cbd0"; font.pixelSize: 12 }
                     StudioArea {
@@ -730,7 +751,7 @@ Item {
                         Layout.fillWidth: true
                         minimumEditorHeight: 104
                         enabled: !workspace.renderBusy
-                        placeholderText: "Card abilities..."
+                        placeholderText: workspace.isPlaneswalker ? "+1: Draw a card.\n-2: Return target creature to its owner’s hand." : "Card abilities..."
                     }
                     Text { text: "Flavor text"; color: "#c4cbd0"; font.pixelSize: 12 }
                     StudioArea {
@@ -742,8 +763,9 @@ Item {
                         enabled: !workspace.renderBusy
                         placeholderText: "Optional flavor text..."
                     }
-                    Text { text: "Power / Toughness"; color: "#c4cbd0"; font.pixelSize: 12 }
+                    Text { text: "Power / Toughness"; color: "#c4cbd0"; font.pixelSize: 12; visible: !workspace.isPlaneswalker }
                     RowLayout {
+                        visible: !workspace.isPlaneswalker
                         Layout.fillWidth: true
                         spacing: 10
                         StudioField {
@@ -761,6 +783,28 @@ Item {
                             enabled: !workspace.renderBusy
                             placeholderText: "Toughness"
                         }
+                    }
+                    Text {
+                        text: "Starting loyalty"
+                        color: loyalty.text.trim().length > 0 ? "#80c7a1" : "#d68b87"
+                        font.pixelSize: 12
+                        visible: workspace.isPlaneswalker
+                    }
+                    StudioField {
+                        id: loyalty
+                        Layout.fillWidth: true
+                        visible: workspace.isPlaneswalker
+                        enabled: !workspace.renderBusy
+                        placeholderText: "e.g. 3"
+                        onTextChanged: workspace.captureCurrentFace()
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: workspace.isPlaneswalker
+                        text: "Loyalty abilities: one per line, such as +1: Draw a card. or -3: Destroy target creature."
+                        color: workspace.muted
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
                     }
                     Text { text: "Artist"; color: "#c4cbd0"; font.pixelSize: 12 }
                     StudioField {
@@ -1114,7 +1158,9 @@ Item {
                     spacing: 11
                     Text { text: "Render Settings"; color: "#f5f6f7"; font.pixelSize: 20; font.bold: true }
                     Text {
-                        text: workspace.isDualFace ? "Choose a frame supporting both faces." : "Choose an installed frame for your card."
+                        text: workspace.isDualFace ? "Choose a frame supporting both faces."
+                            : workspace.isPlaneswalker ? "Choose an installed planeswalker frame."
+                            : "Choose an installed frame for your card."
                         color: workspace.muted
                         font.pixelSize: 12
                         Layout.fillWidth: true
@@ -1178,9 +1224,11 @@ Item {
                     }
                     Text {
                         Layout.fillWidth: true
-                        visible: workspace.isDualFace && workspace.selectedTemplateInstalled
+                        visible: workspace.selectedTemplateInstalled
                             && !workspace.selectedTemplateSupportsCard
-                        text: "This template does not support both card faces. Choose a double-faced template."
+                        text: workspace.isPlaneswalker
+                            ? "This template doesn't support planeswalkers. Choose a planeswalker frame."
+                            : "This template does not support both card faces. Choose a double-faced template."
                         color: "#d6c7a6"
                         font.pixelSize: 11
                         wrapMode: Text.WordWrap
