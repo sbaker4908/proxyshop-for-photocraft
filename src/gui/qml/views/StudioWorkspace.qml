@@ -98,8 +98,11 @@ Item {
         loadingFaceFields = true;
         activeFaceIndex = 0;
         const card = studioCardModel.card;
+        // Studio Output Defaults V3: use saved flavor text on new cards.
         faceDrafts = (card.faces || []).map(function(f) {
-            return Object.assign({}, f);
+            return Object.assign({}, f, {
+                include_flavor_text: studioOutputDefaults.includeFlavorText ? "true" : "false"
+            });
         });
         // Don't display a previous card's render as though it belonged to this lookup.
         previewCardUrl = "";
@@ -1672,7 +1675,7 @@ Item {
                         Layout.fillWidth: true
                         subtle: true
                         text: "Save as Default"
-                        enabled: !studioRenderModel.busy
+                        enabled: !workspace.renderBusy
                         onClicked: {
                             studioOutputDefaults.showSetSymbol = workspace.showSetSymbol;
                             studioOutputDefaults.artistOnlyCredit = workspace.artistOnlyCredit;

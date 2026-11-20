@@ -52,6 +52,9 @@ def launch_gui(
         windll.shell32.SetCurrentProcessExplicitAppUserModelID("ProxyStudio.Desktop")
 
     app = QGuiApplication(applicationDisplayName="MTG Proxy Studio")
+    # Studio Output Defaults V3: stable identity for persistent Qt settings.
+    app.setOrganizationName("ProxyStudio")
+    app.setApplicationName("ProxyStudio")
     # Resolve against this file so launching outside the repo root also works.
     app_icon = QIcon(str(Path(__file__).resolve().parent / "src" / "img" / "favicon.ico"))
     app.setWindowIcon(app_icon)
