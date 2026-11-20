@@ -274,7 +274,7 @@ class StudioDualRenderModel(QObject):
                         prior(operation, config)
                     if borderless:
                         StudioRenderModel._apply_borderless_options(config, form_options)
-                    StudioRenderModel._apply_studio_output_options(config, form_options)
+                    StudioRenderModel._apply_studio_output_options(config, form_options, operation.layout)
 
                 op.before_render_callback = apply_options
                 setattr(op, "_studio_render_source", True)

@@ -121,6 +121,10 @@ Item {
     // Global Studio-only options. Scryfall flavor text stays editable even when
     // excluded from export. Manual edit saves a PSD, then launches PhotoCraft.
     property bool includeFlavorText: true
+    // Studio Output options: these only affect the current render.
+    property bool showSetSymbol: true
+    property bool artistOnlyCredit: false
+    property bool showWatermark: false
     property bool saveEditablePsd: false
     readonly property bool showBorderlessOptions:
         studioRenderModel.supports_borderless_options(selectedTemplateIndex)
@@ -141,6 +145,9 @@ Item {
         studioCardModel.card.name || "",
         studioCardModel.card.layout_kind || "",
         faceDrafts,
+        showSetSymbol,
+        artistOnlyCredit,
+        showWatermark,
         saveEditablePsd,
         selectedTemplateName,
         selectedTemplateIndex >= 0
@@ -159,6 +166,9 @@ Item {
             studioCardModel.card.name || "",
             studioCardModel.card.layout_kind || "",
             face,
+            showSetSymbol,
+            artistOnlyCredit,
+            showWatermark,
             saveEditablePsd,
             selectedTemplateName,
             selectedTemplateIndex >= 0
@@ -314,6 +324,9 @@ Item {
         }
         const shared = {
             editable_psd: saveEditablePsd ? "true" : "false",
+            show_set_symbol: showSetSymbol ? "true" : "false",
+            artist_only_credit: artistOnlyCredit ? "true" : "false",
+            show_watermark: showWatermark ? "true" : "false",
             template_textbox_size: borderlessTextboxSize,
             template_textless: borderlessTextless ? "true" : "false",
             template_drop_shadow: borderlessDropShadow ? "true" : "false"
@@ -1419,6 +1432,123 @@ Item {
                         font.pixelSize: 11
                         font.bold: true
                         color: "#a8b5bd"
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            text: "Show set symbol"
+                            color: "#c4cbd0"
+                            font.pixelSize: 12
+                            Layout.fillWidth: true
+                        }
+                        Switch {
+                            id: setSymbolSwitch
+                            text: ""
+                            implicitHeight: 23
+                            enabled: !workspace.renderBusy
+                            checked: workspace.showSetSymbol
+                            onToggled: workspace.showSetSymbol = checked
+                            HoverHandler {
+                                enabled: setSymbolSwitch.enabled
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                            indicator: Rectangle {
+                                implicitWidth: 38
+                                implicitHeight: 22
+                                x: setSymbolSwitch.leftPadding
+                                y: (parent.height - height) / 2
+                                radius: 11
+                                color: setSymbolSwitch.checked ? "#28794f" : "#42494f"
+                                border.color: setSymbolSwitch.checked ? "#4aad7a" : "#606a70"
+                                Rectangle {
+                                    x: setSymbolSwitch.checked ? parent.width - width - 3 : 3
+                                    y: 3
+                                    width: 16
+                                    height: 16
+                                    radius: 8
+                                    color: "#f2f4f5"
+                                }
+                            }
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            text: "Artist credit only"
+                            color: "#c4cbd0"
+                            font.pixelSize: 12
+                            Layout.fillWidth: true
+                        }
+                        Switch {
+                            id: artistOnlySwitch
+                            text: ""
+                            implicitHeight: 23
+                            enabled: !workspace.renderBusy
+                            checked: workspace.artistOnlyCredit
+                            onToggled: workspace.artistOnlyCredit = checked
+                            HoverHandler {
+                                enabled: artistOnlySwitch.enabled
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                            indicator: Rectangle {
+                                implicitWidth: 38
+                                implicitHeight: 22
+                                x: artistOnlySwitch.leftPadding
+                                y: (parent.height - height) / 2
+                                radius: 11
+                                color: artistOnlySwitch.checked ? "#28794f" : "#42494f"
+                                border.color: artistOnlySwitch.checked ? "#4aad7a" : "#606a70"
+                                Rectangle {
+                                    x: artistOnlySwitch.checked ? parent.width - width - 3 : 3
+                                    y: 3
+                                    width: 16
+                                    height: 16
+                                    radius: 8
+                                    color: "#f2f4f5"
+                                }
+                            }
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Text {
+                            text: "Watermark"
+                            color: "#c4cbd0"
+                            font.pixelSize: 12
+                            Layout.fillWidth: true
+                        }
+                        Switch {
+                            id: watermarkSwitch
+                            text: ""
+                            implicitHeight: 23
+                            enabled: !workspace.renderBusy
+                            checked: workspace.showWatermark
+                            onToggled: workspace.showWatermark = checked
+                            HoverHandler {
+                                enabled: watermarkSwitch.enabled
+                                cursorShape: Qt.PointingHandCursor
+                            }
+                            indicator: Rectangle {
+                                implicitWidth: 38
+                                implicitHeight: 22
+                                x: watermarkSwitch.leftPadding
+                                y: (parent.height - height) / 2
+                                radius: 11
+                                color: watermarkSwitch.checked ? "#28794f" : "#42494f"
+                                border.color: watermarkSwitch.checked ? "#4aad7a" : "#606a70"
+                                Rectangle {
+                                    x: watermarkSwitch.checked ? parent.width - width - 3 : 3
+                                    y: 3
+                                    width: 16
+                                    height: 16
+                                    radius: 8
+                                    color: "#f2f4f5"
+                                }
+                            }
+                        }
                     }
                     RowLayout {
                         Layout.fillWidth: true

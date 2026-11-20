@@ -194,26 +194,78 @@ class StudioRenderModel(QObject):
 
     @staticmethod
     def _validate_studio_output_options(form: dict[str, str]) -> None:
-        if form.get("include_flavor_text", "true").lower() not in {"true", "false"}:
-            raise ValueError("Invalid flavor text inclusion option.")
-        if form.get("editable_psd", "false").lower() not in {"true", "false"}:
-            raise ValueError("Invalid PSD output option.")
+        for key, description, default in (
+            ("include_flavor_text", "flavor text inclusion", "true"),
+            ("editable_psd", "PSD output", "false"),
+            ("show_set_symbol", "set symbol", "true"),
+            ("artist_only_credit", "artist-only credit", "false"),
+            ("show_watermark", "watermark", "false"),
+        ):
+            if form.get(key, default).lower() not in {"true", "false"}:
+                raise ValueError(f"Invalid {description} option.")
 
     @staticmethod
-    def _apply_studio_output_options(config: AppConfig, form: dict[str, str]) -> None:
-        """Apply options to the active render's merged config only; never save INI."""
-        if not config.file.has_section("BASE.TEXT"):
-            config.file.add_section("BASE.TEXT")
-        # Don't erase the source: Proxyshop omits flavor at layout-processing time.
+    def _apply_studio_output_options(
+        config: AppConfig, form: dict[str, str], layout: Any | None = None
+    ) -> None:
+        """Apply Studio-only options for this render; never persist configuration.
+
+        The visible expansion symbol and rules-text watermark are independent:
+        disabling the first must not prevent rendering the second.
+        """
+        for section in ("BASE.TEXT", "BASE.SYMBOLS", "BASE.WATERMARKS"):
+            if not config.file.has_section(section):
+                config.file.add_section(section)
+
         include_flavor = form.get("include_flavor_text", "true").lower() == "true"
+        show_symbol = form.get("show_set_symbol", "true").lower() == "true"
+        artist_only = form.get("artist_only_credit", "false").lower() == "true"
+        show_watermark = form.get("show_watermark", "false").lower() == "true"
+
+        # Source data and set code remain untouched, even when their printed
+        # decorations are disabled.
         config.file.set("BASE.TEXT", "No.Flavor.Text", "false" if include_flavor else "true")
+        config.file.set("BASE.SYMBOLS", "Enable.Expansion.Symbol", "true" if show_symbol else "false")
+        if artist_only:
+            config.file.set("BASE.TEXT", "Collector.Mode", "artist")
+        elif config.file.get("BASE.TEXT", "Collector.Mode", fallback="default") == "artist":
+            # OFF should restore the regular collector footer, even if global
+            # settings happened to use the artist-only mode.
+            config.file.set("BASE.TEXT", "Collector.Mode", "default")
+
+        config.file.set("BASE.WATERMARKS", "Watermark.Mode", "Forced" if show_watermark else "Disabled")
+        if show_watermark:
+            config.file.set("BASE.WATERMARKS", "Default.Watermark", "symbol")
 
         if form.get("editable_psd", "false").lower() == "true":
             if not config.file.has_section("APP.FILES"):
                 config.file.add_section("APP.FILES")
             config.file.set("APP.FILES", "Output.File.Type", OutputFileType.PSD.value)
-        # AppConfig stores derived values such as output_file_type/remove_flavor.
+
+        # AppConfig stores derived values such as symbol_enabled,
+        # collector_mode, watermark_mode and output_file_type.
         config.update_definitions()
+
+        if show_watermark and layout is not None:
+            # Proxyshop's `symbol` watermark preset only resolves an existing
+            # WM.svg for a known printing, and isn't sufficient for offline
+            # custom cards. First try the actual set watermark; if it doesn't
+            # exist, reuse the expansion-symbol SVG as a subtle watermark.
+            # The symbol file can be resolved even when the visible symbol is
+            # disabled; only its placement is governed by symbol_enabled.
+            from src.utils.hexapi import get_watermark_svg_from_set
+
+            watermark_asset = get_watermark_svg_from_set(layout.set) or layout.symbol_svg
+            if watermark_asset is not None and watermark_asset.is_file():
+                # watermark_svg is a cached_property; set only for this
+                # render's own layout, without modifying global settings.
+                layout.__dict__["watermark_svg"] = watermark_asset
+                layout.__dict__.pop("watermark", None)
+            else:
+                _logger.warning(
+                    "Studio watermark requested but no symbol asset was found "
+                    "for set %s", layout.set
+                )
 
     @Slot("QVariantMap")  # pyright: ignore[reportArgumentType]
     def render_card(self, values: dict[str, Any]) -> None:
@@ -347,7 +399,7 @@ class StudioRenderModel(QObject):
                     previous_callback(op, cfg)
                 if is_borderless:
                     self._apply_borderless_options(cfg, form)
-                self._apply_studio_output_options(cfg, form)
+                self._apply_studio_output_options(cfg, form, op.layout)
 
             operation.before_render_callback = apply_studio_options
 

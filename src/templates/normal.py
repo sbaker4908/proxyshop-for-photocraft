@@ -2233,6 +2233,11 @@ class BorderlessVectorTemplate(
 
         # Enable Legendary Crown group and layers
         if self.crown_group:
+            # ProxyStudio: the Borderless crown sits inside an initially hidden
+            # wrapper. Reveal both groups before generating its colored layers.
+            if isinstance((parent := self.crown_group.parent), LayerSet):
+                parent.visible = True
+            self.crown_group.visible = True
             self.generate_layer(
                 group=self.crown_group, colors=self.crown_colors, masks=self.crown_masks
             )
