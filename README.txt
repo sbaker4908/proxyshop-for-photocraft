@@ -1,20 +1,25 @@
-ProxyStudio — Studio right-panel bottom border fix (V1)
-======================================================
+ProxyStudio — Card Preview Pan + Zoom V1
+========================================
 
-Issue: The fixed Render Card/status footer fills the right panel to its edges,
-covering the parent's thin border at the bottom and lower corners.
+Adds navigation to the center Card Preview pane in Studio.
 
-Fix: Inset the footer by 1px on the left, right and bottom, and use a 9px
-corner radius so the 10px panel outline remains visible. Other panels and
-all saved output settings are unaffected.
+Controls:
+- Mouse wheel over the rendered card: zoom in / out (up to 800%, minimum Fit)
+- Left-click and drag on a zoomed card: pan
+- Plus and minus buttons: step zoom in / out
+- Fit button or double-click inside the preview: reset to fit
+- Loading a new render, or switching preview faces: reset to fit
 
-Install:
+How to install:
 1. Close ProxyStudio.
-2. Extract install_footer_border_fix_v1.py into your project folder next to main.py.
-3. From PowerShell in that folder run:
+2. Extract install_preview_panzoom_v1.py beside main.py in your project root.
+3. Run: uv run python install_preview_panzoom_v1.py
+4. Run: uv run main.py
 
-   uv run python install_footer_border_fix_v1.py
-   uv run main.py
+Changes only src/gui/qml/views/StudioWorkspace.qml.
+Does not modify the exported card image, render logic, Trim view, or settings.
+Creates a timestamped backup under .git/proxystudio-patch-backups/preview-panzoom-v1/.
+Idempotent: running it again will not duplicate the controls.
 
-The installer backs up your original StudioWorkspace.qml file and changes
-nothing if the expected footer cannot be found. It can be safely rerun.
+If the installer says preview markup does not match, it has left the source
+unchanged; please share the error so the patch can be adjusted safely.
