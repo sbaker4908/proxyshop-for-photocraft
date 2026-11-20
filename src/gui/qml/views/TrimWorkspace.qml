@@ -8,6 +8,18 @@ import QtQuick.Dialogs
 Item {
     id: workspace
 
+    // Shared Studio / Trim panel alignment V1.
+    // Compact Studio / Trim panel-header spacing V2.
+    // Keep these values identical in StudioWorkspace and TrimWorkspace.
+    readonly property int panelPadding: 18
+    readonly property int panelTopPadding: 12
+    readonly property int panelSpacing: 8
+    readonly property int panelHeadingHeight: 32
+    readonly property int panelHeadingFontSize: 20
+    readonly property int panelSubtitleFontSize: 12
+    readonly property int panelSubtitleMinHeight: 18
+    readonly property int panelSubtitleBottomMargin: 2
+
     property bool showOriginal: false
     // Tool-panel sizing matches Studio; Trim keeps its own darker surface colors.
     readonly property color textPrimary: "#f5f6f7"
@@ -84,22 +96,26 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 18
-                spacing: 9
+                anchors.margins: workspace.panelPadding
+                anchors.topMargin: workspace.panelTopPadding
+                spacing: workspace.panelSpacing
 
                 Text {
+                    Layout.preferredHeight: workspace.panelHeadingHeight
                     text: "Trim"
                     color: workspace.textPrimary
                     font.bold: true
-                    font.pixelSize: 20
+                    font.pixelSize: workspace.panelHeadingFontSize
+                    verticalAlignment: Text.AlignVCenter
                 }
 
                 Text {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: Math.max(workspace.panelSubtitleMinHeight, implicitHeight)
+                    Layout.bottomMargin: workspace.panelSubtitleBottomMargin
                     text: "Remove print bleed and round the corners of a completed card render."
                     color: workspace.textMuted
-                    font.pixelSize: 12
-                    Layout.bottomMargin: 10
+                    font.pixelSize: workspace.panelSubtitleFontSize
                     wrapMode: Text.WordWrap
                 }
 
@@ -261,18 +277,21 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 18
-                spacing: 11
+                anchors.margins: workspace.panelPadding
+                anchors.topMargin: workspace.panelTopPadding
+                spacing: workspace.panelSpacing
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: workspace.panelHeadingHeight
                     spacing: 9
 
                     Text {
                         text: "Card Preview"
                         color: workspace.textPrimary
-                        font.pixelSize: 20
+                        font.pixelSize: workspace.panelHeadingFontSize
                         font.bold: true
+                        Layout.alignment: Qt.AlignVCenter
                     }
 
                     // Same compact folder action used in Studio.
@@ -360,6 +379,16 @@ Item {
                         primary: !workspace.showOriginal
                         onClicked: workspace.showOriginal = false
                     }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.max(workspace.panelSubtitleMinHeight, implicitHeight)
+                    Layout.bottomMargin: workspace.panelSubtitleBottomMargin
+                    text: "Compare the original and trimmed card."
+                    color: workspace.textMuted
+                    font.pixelSize: workspace.panelSubtitleFontSize
+                    wrapMode: Text.WordWrap
                 }
 
                 Rectangle {

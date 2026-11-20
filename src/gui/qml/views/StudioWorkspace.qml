@@ -7,6 +7,18 @@ import QtCore
 Item {
     id: workspace
 
+    // Shared Studio / Trim panel alignment V1.
+    // Compact Studio / Trim panel-header spacing V2.
+    // Keep these values identical in StudioWorkspace and TrimWorkspace.
+    readonly property int panelPadding: 18
+    readonly property int panelTopPadding: 12
+    readonly property int panelSpacing: 8
+    readonly property int panelHeadingHeight: 32
+    readonly property int panelHeadingFontSize: 20
+    readonly property int panelSubtitleFontSize: 12
+    readonly property int panelSubtitleMinHeight: 18
+    readonly property int panelSubtitleBottomMargin: 2
+
 
     // Studio Output defaults V2 — explicitly saved by the user.
     // Persisted values change only when Save as Default is clicked.
@@ -625,21 +637,30 @@ Item {
             ScrollView {
                 id: editorScroll
                 anchors.fill: parent
-                anchors.margins: 18
+                anchors.margins: workspace.panelPadding
+                anchors.topMargin: workspace.panelTopPadding
                 clip: true
                 ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
                 ColumnLayout {
                     width: editorScroll.availableWidth
-                    spacing: 9
+                    spacing: workspace.panelSpacing
 
-                    Text { text: "Card Details"; font.pixelSize: 20; font.bold: true; color: "#f5f6f7" }
                     Text {
+                        Layout.preferredHeight: workspace.panelHeadingHeight
+                        text: "Card Details"
+                        font.pixelSize: workspace.panelHeadingFontSize
+                        font.bold: true
+                        color: "#f5f6f7"
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.max(workspace.panelSubtitleMinHeight, implicitHeight)
+                        Layout.bottomMargin: workspace.panelSubtitleBottomMargin
                         text: "Find an existing card or create one from scratch."
                         color: workspace.muted
-                        font.pixelSize: 12
-                        Layout.fillWidth: true
-                        Layout.bottomMargin: 10
+                        font.pixelSize: workspace.panelSubtitleFontSize
                         wrapMode: Text.WordWrap
                     }
 
@@ -974,18 +995,21 @@ Item {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 18
-                spacing: 11
+                anchors.margins: workspace.panelPadding
+                anchors.topMargin: workspace.panelTopPadding
+                spacing: workspace.panelSpacing
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.preferredHeight: workspace.panelHeadingHeight
                     spacing: 9
 
                     Text {
                         text: "Card Preview"
                         color: "#f5f6f7"
-                        font.pixelSize: 20
+                        font.pixelSize: workspace.panelHeadingFontSize
                         font.bold: true
+                        Layout.alignment: Qt.AlignVCenter
                     }
 
                     // Compact output-folder action next to the title.
@@ -1105,6 +1129,16 @@ Item {
                     }
                 }
 
+                Text {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.max(workspace.panelSubtitleMinHeight, implicitHeight)
+                    Layout.bottomMargin: workspace.panelSubtitleBottomMargin
+                    text: "Your latest Studio render appears here."
+                    color: workspace.muted
+                    font.pixelSize: workspace.panelSubtitleFontSize
+                    wrapMode: Text.WordWrap
+                }
+
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -1179,24 +1213,33 @@ Item {
             ScrollView {
                 id: renderSettingsScroll
                 anchors.fill: parent
-                anchors.margins: 18
+                anchors.margins: workspace.panelPadding
+                anchors.topMargin: workspace.panelTopPadding
                 anchors.bottomMargin: workspace.renderStatusDetail.length > 0 ? 176 : 138
                 clip: true
                 ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
                 ColumnLayout {
                     width: renderSettingsScroll.availableWidth
-                    spacing: 11
-                    Text { text: "Render Settings"; color: "#f5f6f7"; font.pixelSize: 20; font.bold: true }
+                    spacing: workspace.panelSpacing
                     Text {
+                        Layout.preferredHeight: workspace.panelHeadingHeight
+                        text: "Render Settings"
+                        color: "#f5f6f7"
+                        font.pixelSize: workspace.panelHeadingFontSize
+                        font.bold: true
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.max(workspace.panelSubtitleMinHeight, implicitHeight)
+                        Layout.bottomMargin: workspace.panelSubtitleBottomMargin
                         text: workspace.isDualFace ? "Choose a frame supporting both faces."
                             : workspace.isPlaneswalker ? "Choose an installed planeswalker frame."
                             : "Choose an installed frame for your card."
                         color: workspace.muted
-                        font.pixelSize: 12
-                        Layout.fillWidth: true
+                        font.pixelSize: workspace.panelSubtitleFontSize
                         wrapMode: Text.WordWrap
-                        Layout.bottomMargin: 12
                     }
                     Text { text: "Frame template"; color: "#c4cbd0"; font.pixelSize: 12 }
                     ComboBox {
