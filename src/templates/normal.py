@@ -1400,14 +1400,21 @@ class BorderlessVectorTemplate(
 
     @cached_property
     def size(self) -> str:
-        """Layer name associated with the size of the textbox."""
+        """Select the smallest Borderless box that keeps rules text readable.
 
-        # Check for textless
+        The old Automatic algorithm measured *unfitted* text in a Tall text
+        layer, then used fixed wrapped-line thresholds. This misclassifies
+        Chatterfang as Tall even though the real renderer fits it in Normal.
+
+        For Automatic only, we now dry-run the SAME FormattedTextArea formatter
+        used for a real card, on temporary copies of the PSD text layers.
+        Choose the shortest box whose fitted font is reasonably close to the
+        font in a Tall box. Actual render typography is never touched.
+        """
         if self.is_textless:
             return BorderlessTextbox.Textless
 
-        # Get the user's preferred setting
-        size = str(
+        requested = str(
             self.config.get_option(
                 section="FRAME",
                 key="Textbox.Size",
@@ -1415,44 +1422,138 @@ class BorderlessVectorTemplate(
                 default=BorderlessTextbox.Automatic,
             )
         )
+        if requested != BorderlessTextbox.Automatic:
+            return requested
+        if self.is_basic_land:
+            return BorderlessTextbox.Short
 
-        # Determine the automatic size
-        if size == BorderlessTextbox.Automatic:
-            # Check for basic land
-            if self.is_basic_land:
-                return BorderlessTextbox.Short
+        log = getLogger(__name__)
+        from src.helpers.text import get_font_size
 
-            # Set up our test text layer
-            test_layer = psd.getLayer(
-                self.text_layer_rules_name, [self.text_group, "Tall"]
+        reference_group = psd.getLayerSet(LAYERS.TEXTBOX_REFERENCE, self.text_group)
+        all_sizes = (
+            BorderlessTextbox.Short,
+            BorderlessTextbox.Medium,
+            BorderlessTextbox.Normal,
+            BorderlessTextbox.Tall,
+        )
+
+        def probe(candidate: str) -> tuple[float, float] | None:
+            """Read initial/fitted font sizes without changing source layers."""
+            if reference_group is None:
+                return None
+            original = psd.getLayer(
+                self.text_layer_rules_name, [self.text_group, candidate]
             )
-            test_text = self.layout.oracle_text
-            if test_layer:
-                if self.layout.flavor_text:
-                    test_text += f"\r{self.layout.flavor_text}"
-                test_layer.textItem.contents = test_text.replace("\n", "\r")
+            reference = psd.get_reference_layer(candidate, reference_group)
+            if original is None or reference is None:
+                return None
 
-                # The measured line count includes layout height and line spacing.
-                # Allow seven lines in Normal before moving to Tall; the normal
-                # text fitter still reduces text if a card truly needs it.
-                num = get_line_count(test_layer, self.docref)
-                if self.layout.flavor_text:
-                    num += 1
-                if num < 5:
-                    chosen = BorderlessTextbox.Short
-                elif num < 6:
-                    chosen = BorderlessTextbox.Medium
-                elif num < 8:
-                    chosen = BorderlessTextbox.Normal
-                else:
-                    chosen = BorderlessTextbox.Tall
-                getLogger(__name__).info(
-                    "Borderless Automatic textbox: %s measured lines -> %s (%s)",
-                    num, chosen, self.layout.name,
+            copy = None
+            try:
+                copy = original.duplicate()
+                copy.visible = True
+                initial_font = float(get_font_size(copy))
+                formatter = FormattedTextArea(
+                    layer=copy,
+                    contents=self.layout.oracle_text or "",
+                    flavor=self.layout.flavor_text or "",
+                    reference=reference,
+                    pt_reference=self.pt_reference,
                 )
-                return chosen
+                if not formatter.validate():
+                    return None
+                formatter.execute()
+                fitted_font = float(get_font_size(copy))
+                if initial_font <= 0 or fitted_font <= 0:
+                    return None
+                return initial_font, fitted_font
+            finally:
+                # The original PSD layers and finished card remain untouched.
+                if copy is not None:
+                    copy.remove()
+
+        try:
+            # Tall provides our baseline for an acceptable, authentic text size.
+            tall = probe(BorderlessTextbox.Tall)
+            if tall is not None:
+                # Relative to the actual fitted Tall font, not the initial
+                # unscaled layer bounds. A modest reduction is acceptable:
+                # forced Normal Chatterfang demonstrates this in practice.
+                min_legible_ratio = 0.80
+                baseline = tall[1]
+                records = []
+                for candidate in all_sizes[:-1]:
+                    result = probe(candidate)
+                    if result is None:
+                        records.append((str(candidate), "unavailable"))
+                        continue
+                    initial, fitted = result
+                    font_ratio = fitted / baseline
+                    records.append((str(candidate), round(font_ratio, 3)))
+                    if fitted >= baseline * min_legible_ratio:
+                        log.info(
+                            "Borderless Automatic fit probe V4: "
+                            "selected=%s, Tall font=%.2f, selected font=%.2f, "
+                            "relative=%.3f, candidates=%s, card=%s",
+                            candidate, baseline, fitted, font_ratio,
+                            records, self.layout.name,
+                        )
+                        return candidate
+                log.info(
+                    "Borderless Automatic fit probe V4: selected=Tall, "
+                    "Tall font=%.2f, candidates=%s, card=%s",
+                    baseline, records, self.layout.name,
+                )
+                return BorderlessTextbox.Tall
+        except Exception:
+            log.exception(
+                "Borderless Automatic fit probe V4: formatter probe unavailable "
+                "for %s; falling back to line-count selection",
+                self.layout.name,
+            )
+
+        # Graceful fallback for PhotoCraft builds that do not support probing
+        # copies of text layers. Unlike the original, allow up to ten measured
+        # lines in Normal when there is no flavor divider. This is grounded
+        # by the successful manual Normal render of ten-line Chatterfang;
+        # unusually long cards and flavor cards remain conservative.
+        test_layer = psd.getLayer(
+            self.text_layer_rules_name, [self.text_group, BorderlessTextbox.Tall]
+        )
+        if test_layer is None:
             return BorderlessTextbox.Tall
-        return size
+        copy = None
+        try:
+            copy = test_layer.duplicate()
+            copy.textItem.contents = (
+                (self.layout.oracle_text or "")
+                + ("\r" + self.layout.flavor_text if self.layout.flavor_text else "")
+            ).replace("\n", "\r")
+            measured = get_line_count(copy, self.docref)
+            flavor = bool(self.layout.flavor_text)
+            if flavor:
+                measured += 1
+            if measured < 5:
+                chosen = BorderlessTextbox.Short
+            elif measured < 6:
+                chosen = BorderlessTextbox.Medium
+            elif measured <= (7 if flavor else 10):
+                chosen = BorderlessTextbox.Normal
+            else:
+                chosen = BorderlessTextbox.Tall
+            log.info(
+                "Borderless Automatic fit probe V4: fallback=%s, "
+                "measured=%s, flavor=%s, card=%s",
+                chosen, measured, flavor, self.layout.name,
+            )
+            return chosen
+        except Exception:
+            log.exception("Borderless Automatic fallback failed for %s", self.layout.name)
+            return BorderlessTextbox.Tall
+        finally:
+            if copy is not None:
+                copy.remove()
 
     @cached_property
     def color_limit(self) -> int:
