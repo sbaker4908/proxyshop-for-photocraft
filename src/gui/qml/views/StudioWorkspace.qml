@@ -3,8 +3,23 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 
+import QtCore
 Item {
     id: workspace
+
+
+    // Studio Output defaults V2 — explicitly saved by the user.
+    // Persisted values change only when Save as Default is clicked.
+    Settings {
+        id: studioOutputDefaults
+        category: "StudioOutputDefaults"
+        property bool showSetSymbol: true
+        property bool artistOnlyCredit: false
+        property bool showWatermark: false
+        property bool includeFlavorText: true
+        property bool saveEditablePsd: false
+    }
+    property bool outputDefaultsSavedThisSession: false
 
     // The Studio workflow intentionally remains separate from the legacy Render button.
     property url previewCardUrl: ""
@@ -120,12 +135,12 @@ Item {
 
     // Global Studio-only options. Scryfall flavor text stays editable even when
     // excluded from export. Manual edit saves a PSD, then launches PhotoCraft.
-    property bool includeFlavorText: true
+    property bool includeFlavorText: studioOutputDefaults.includeFlavorText
     // Studio Output options: these only affect the current render.
-    property bool showSetSymbol: true
-    property bool artistOnlyCredit: false
-    property bool showWatermark: false
-    property bool saveEditablePsd: false
+    property bool showSetSymbol: studioOutputDefaults.showSetSymbol
+    property bool artistOnlyCredit: studioOutputDefaults.artistOnlyCredit
+    property bool showWatermark: studioOutputDefaults.showWatermark
+    property bool saveEditablePsd: studioOutputDefaults.saveEditablePsd
     readonly property bool showBorderlessOptions:
         studioRenderModel.supports_borderless_options(selectedTemplateIndex)
 
@@ -1649,6 +1664,35 @@ Item {
                         visible: workspace.activeLaunchWarning.length > 0
                         text: workspace.activeLaunchWarning
                         color: "#d6c7a6"
+                        font.pixelSize: 11
+                        wrapMode: Text.WordWrap
+                    }
+                    // Studio Output defaults V2 action.
+                    StudioButton {
+                        Layout.fillWidth: true
+                        subtle: true
+                        text: "Save as Default"
+                        enabled: !studioRenderModel.busy
+                        onClicked: {
+                            studioOutputDefaults.showSetSymbol = workspace.showSetSymbol;
+                            studioOutputDefaults.artistOnlyCredit = workspace.artistOnlyCredit;
+                            studioOutputDefaults.showWatermark = workspace.showWatermark;
+                            studioOutputDefaults.includeFlavorText = workspace.includeFlavorText;
+                            studioOutputDefaults.saveEditablePsd = workspace.saveEditablePsd;
+                            studioOutputDefaults.sync();
+                            workspace.outputDefaultsSavedThisSession = true;
+                        }
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        visible: workspace.outputDefaultsSavedThisSession
+                            && workspace.showSetSymbol === studioOutputDefaults.showSetSymbol
+                            && workspace.artistOnlyCredit === studioOutputDefaults.artistOnlyCredit
+                            && workspace.showWatermark === studioOutputDefaults.showWatermark
+                            && workspace.includeFlavorText === studioOutputDefaults.includeFlavorText
+                            && workspace.saveEditablePsd === studioOutputDefaults.saveEditablePsd
+                        text: "Saved! These Output settings will load next time."
+                        color: "#8dc9a6"
                         font.pixelSize: 11
                         wrapMode: Text.WordWrap
                     }
