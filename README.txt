@@ -1,38 +1,20 @@
-ProxyStudio — Compact Panel Spacing V2
-======================================
+ProxyStudio — Studio right-panel bottom border fix (V1)
+======================================================
 
-This is a follow-up to the Studio & Trim Alignment Fix V1. Install V1 first
-(it is already installed if the Studio preview shows the new subtitle).
+Issue: The fixed Render Card/status footer fills the right panel to its edges,
+covering the parent's thin border at the bottom and lower corners.
 
-INSTALL
+Fix: Inset the footer by 1px on the left, right and bottom, and use a 9px
+corner radius so the 10px panel outline remains visible. Other panels and
+all saved output settings are unaffected.
+
+Install:
 1. Close ProxyStudio.
-2. Extract install_panel_spacing_v2.py into your project root beside main.py:
-   C:\Projects\proxyshop-for-photocraft
-3. From PowerShell in that folder, run:
+2. Extract install_footer_border_fix_v1.py into your project folder next to main.py.
+3. From PowerShell in that folder run:
 
-      uv run python install_panel_spacing_v2.py
-      uv run main.py
+   uv run python install_footer_border_fix_v1.py
+   uv run main.py
 
-CHANGES (both Studio and Trim)
-- Panel top padding: 18px -> 12px. Horizontal and bottom padding stay 18px.
-- Main vertical gap: 11px -> 8px.
-- Subtitle reserved minimum height: 32px -> 18px.
-- Subtitle extra bottom margin: 10px -> 2px.
-- Header rows remain 32px, maintaining alignment with the folder action.
-- Long subtitles still grow and wrap naturally if necessary.
-
-Only these files change:
-  src/gui/qml/views/StudioWorkspace.qml
-  src/gui/qml/views/TrimWorkspace.qml
-
-SAFETY
-- Installer validates both files before changing either one.
-- Both original files are backed up under .git/proxystudio-patch-backups/
-  panel-spacing-v2/<timestamp>/ (when the project is a Git checkout).
-- Re-running after successful installation is safe (no-op).
-- Rendering behavior, card models, templates, output defaults, and Trim logic
-  are not touched.
-
-REVIEW
-Use `git diff -- src/gui/qml/views/StudioWorkspace.qml src/gui/qml/views/TrimWorkspace.qml`
-to review the exact changes, then commit/push when satisfied.
+The installer backs up your original StudioWorkspace.qml file and changes
+nothing if the expected footer cannot be found. It can be safely rerun.

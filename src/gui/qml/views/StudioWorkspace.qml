@@ -1345,7 +1345,7 @@ Item {
                     ColumnLayout {
                         Layout.fillWidth: true
                         visible: workspace.showBorderlessOptions
-                        spacing: 11
+                        spacing: workspace.panelSpacing
 
                         Rectangle {
                             Layout.fillWidth: true
@@ -1416,6 +1416,7 @@ Item {
                             Switch {
                                 id: borderlessTextlessSwitch
                                 text: ""
+                                implicitHeight: 23
                                 enabled: !workspace.renderBusy
                                 checked: workspace.borderlessTextless
                                 onToggled: workspace.borderlessTextless = checked
@@ -1454,6 +1455,7 @@ Item {
                             Switch {
                                 id: borderlessShadowSwitch
                                 text: ""
+                                implicitHeight: 23
                                 enabled: !workspace.renderBusy
                                 checked: workspace.borderlessDropShadow
                                 onToggled: workspace.borderlessDropShadow = checked
@@ -1756,11 +1758,15 @@ Item {
             // Persistent action area — stays visible while settings scroll.
             // One grouped status card replaces the scattered status/footer lines.
             Rectangle {
+                // Inset the footer so it cannot paint over the parent panel border.
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
+                anchors.leftMargin: 1
+                anchors.rightMargin: 1
+                anchors.bottomMargin: 1
                 height: workspace.renderStatusDetail.length > 0 ? 166 : 128
-                radius: 10
+                radius: 9
                 color: "#1d2124"
 
                 Rectangle {
