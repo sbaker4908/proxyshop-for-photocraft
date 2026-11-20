@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from functools import cached_property
+from logging import getLogger
 
 from photoshop.api import SolidColor
 from photoshop.api._artlayer import ArtLayer
@@ -1431,16 +1432,25 @@ class BorderlessVectorTemplate(
                     test_text += f"\r{self.layout.flavor_text}"
                 test_layer.textItem.contents = test_text.replace("\n", "\r")
 
-                # Get the number of lines in our test text and decide what size
+                # The measured line count includes layout height and line spacing.
+                # Allow seven lines in Normal before moving to Tall; the normal
+                # text fitter still reduces text if a card truly needs it.
                 num = get_line_count(test_layer, self.docref)
                 if self.layout.flavor_text:
                     num += 1
                 if num < 5:
-                    return BorderlessTextbox.Short
-                if num < 6:
-                    return BorderlessTextbox.Medium
-                if num < 7:
-                    return BorderlessTextbox.Normal
+                    chosen = BorderlessTextbox.Short
+                elif num < 6:
+                    chosen = BorderlessTextbox.Medium
+                elif num < 8:
+                    chosen = BorderlessTextbox.Normal
+                else:
+                    chosen = BorderlessTextbox.Tall
+                getLogger(__name__).info(
+                    "Borderless Automatic textbox: %s measured lines -> %s (%s)",
+                    num, chosen, self.layout.name,
+                )
+                return chosen
             return BorderlessTextbox.Tall
         return size
 

@@ -6,7 +6,10 @@ from __future__ import annotations
 
 from asyncio import ensure_future, to_thread
 from logging import getLogger
+import os
 from pathlib import Path
+import shutil
+import subprocess
 from tempfile import TemporaryDirectory
 from typing import Any
 
@@ -61,6 +64,9 @@ class StudioRenderModel(QObject):
         self._status = "Look up a card to begin."
         self._error = ""
         self._last_output_url = ""
+        self._launch_warning = ""
+        self._editable_psd = False
+        self._render_generation = 0
         self._active_operation: RenderOperation | None = None
         self._art_temp_dir: TemporaryDirectory[str] | None = None
 
@@ -85,6 +91,11 @@ class StudioRenderModel(QObject):
     @Property(str, notify=changed)
     def error(self) -> str:
         return self._error
+
+    @Property(str, notify=changed)
+    def launch_warning(self) -> str:
+        """Reason a saved PSD could not be opened automatically."""
+        return self._launch_warning
 
     @Property(str, notify=changed)
     def last_output_url(self) -> str:
@@ -288,14 +299,17 @@ class StudioRenderModel(QObject):
             self._set_error("Install the selected template before rendering.")
             return
 
+        form = {str(k): str(v) for k, v in values.items()}
         self._busy = True
-        # A new attempt cannot inherit the previous render's success URI.
+        # A new attempt cannot inherit a previous render's result or launch state.
+        self._render_generation += 1
+        self._editable_psd = form.get("editable_psd", "false").lower() == "true"
         self._last_output_url = ""
+        self._launch_warning = ""
         self._phase = "preparing"
         self._error = ""
         self._status = "Preparing card and artwork..."
         self.changed.emit()
-        form = {str(k): str(v) for k, v in values.items()}
         # asyncio is already integrated with the Qt event loop by main.py.
         ensure_future(self._prepare_and_enqueue(form, source, selected.assembled_template))
 
@@ -496,15 +510,19 @@ class StudioRenderModel(QObject):
 
     @Slot(bool)
     def _finish_render(self, success: bool) -> None:
+        # ProxyStudio: restore PSD auto-open after a completed Studio render.
+        # The render is successful independently of whether the desktop GUI opens.
+        output_path: Path | None = None
         if success and self._active_operation is not None:
             instance = self._active_operation.template_instance
             if instance is not None:
                 try:
-                    output_path = instance.output_file_name
-                    if output_path.is_file() and output_path.suffix.lower() in {
+                    candidate = instance.output_file_name
+                    if candidate.is_file() and candidate.suffix.lower() in {
                         ".png", ".jpg", ".jpeg", ".psd"
                     }:
-                        self._last_output_url = output_path.resolve().as_uri()
+                        output_path = candidate.resolve()
+                        self._last_output_url = output_path.as_uri()
                 except Exception:
                     _logger.exception("Could not locate Studio render output")
         self._active_operation = None
@@ -515,7 +533,100 @@ class StudioRenderModel(QObject):
         self._phase = "complete" if success else "error"
         self._status = "Render complete!" if success else ""
         self._error = "" if success else "Rendering failed. Check the application log."
+
+        should_open = bool(success and self._editable_psd)
+        if should_open and output_path is not None and output_path.suffix.lower() == ".psd":
+            self._status = "PSD saved — opening PhotoCraft..."
+        elif should_open:
+            self._launch_warning = "The render finished, but the exported PSD could not be located. Check the output folder."
+            self._status = "PSD export could not be opened"
         self.changed.emit()
+
+        if should_open and output_path is not None and output_path.suffix.lower() == ".psd":
+            ensure_future(self._open_psd(output_path, self._render_generation))
+
+    async def _open_psd(self, path: Path, generation: int) -> None:
+        """Launch PhotoCraft without blocking the Qt event loop."""
+        try:
+            await to_thread(self._launch_photocraft, path)
+        except Exception as exc:
+            _logger.exception("PSD saved, but automatic PhotoCraft opening failed")
+            if generation == self._render_generation:
+                self._launch_warning = f"PSD saved, but PhotoCraft did not open: {exc}"
+                self._status = "PSD saved — open manually"
+                self.changed.emit()
+        else:
+            if generation == self._render_generation:
+                self._status = "Opened PSD in PhotoCraft"
+                self.changed.emit()
+
+    @staticmethod
+    def _launch_photocraft(path: Path) -> None:
+        """Open a saved PSD with the PhotoCraft GUI, not the headless CLI.
+
+        Reuses the already-selected PhotoCraft CLI installation when possible;
+        also looks for a GUI executable in standard Windows locations.
+        This helper is shared by StudioDualRenderModel for double-faced cards.
+        """
+        from src.utils.photocraft import locate_photocraft_cli
+
+        psd_path = Path(path).resolve()
+        if not psd_path.is_file() or psd_path.suffix.lower() != ".psd":
+            raise FileNotFoundError(f"PSD not found: {psd_path}")
+
+        choices: list[Path] = []
+        explicit_gui = os.environ.get("PHOTOCRAFT_GUI") or os.environ.get("PHOTOCRAFT_EXE")
+        if explicit_gui:
+            choices.append(Path(explicit_gui).expanduser())
+
+        cli = locate_photocraft_cli()
+        if cli is not None:
+            choices.extend((cli.with_name("photocraft.exe"), cli.with_name("photocraft")))
+
+        for program in ("photocraft.exe", "photocraft"):
+            if found := shutil.which(program):
+                choices.append(Path(found))
+
+        home = Path.home()
+        for root in (
+            Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "PhotoCraft",
+            Path(os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local"))) / "Programs" / "PhotoCraft",
+            home / "photocraft-bigpsd" / "target" / "release",
+            home / "photocraft-bigpsd" / "target" / "debug",
+            home / "photocraft-repo" / "target" / "release",
+            home / "photocraft-repo" / "target" / "debug",
+        ):
+            choices.append(root / "photocraft.exe")
+
+        attempted: set[Path] = set()
+        launch_errors: list[str] = []
+        for gui in choices:
+            gui = gui.expanduser()
+            if gui in attempted:
+                continue
+            attempted.add(gui)
+            if not gui.is_file():
+                continue
+            try:
+                flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
+                subprocess.Popen(
+                    [str(gui), str(psd_path)],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=flags,
+                )
+                _logger.info("Opening editable PSD in PhotoCraft: %s", psd_path)
+                return
+            except OSError as exc:
+                launch_errors.append(f"{gui}: {exc}")
+
+        if launch_errors:
+            raise OSError("; ".join(launch_errors))
+        raise FileNotFoundError(
+            "PhotoCraft desktop executable not found. Check the PhotoCraft installation "
+            "or set PHOTOCRAFT_GUI to the full path of photocraft.exe."
+        )
 
     def _set_error(self, message: str) -> None:
         self._phase = "error"
